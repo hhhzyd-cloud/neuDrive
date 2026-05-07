@@ -1,43 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, type ConnectionResponse, type OAuthGrantResponse } from '../api'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { useI18n } from '../i18n'
 
 type PlatformKey = 'claude' | 'chatgpt' | 'cursor' | 'windsurf' | 'other'
-
-const platformCatalog: Record<PlatformKey, {
-  name: string
-  method: string
-  copy: string
-  settingsUrl?: string
-}> = {
-  claude: {
-    name: 'Claude',
-    method: 'Remote MCP connector',
-    copy: 'Use neuDrive as a remote MCP connector.',
-    settingsUrl: 'https://claude.ai/settings/connectors',
-  },
-  chatgpt: {
-    name: 'ChatGPT',
-    method: 'Remote MCP via Apps',
-    copy: 'Create a ChatGPT App and point its MCP Server URL at neuDrive.',
-  },
-  cursor: {
-    name: 'Cursor',
-    method: 'MCP server',
-    copy: 'Add neuDrive as an MCP server.',
-  },
-  windsurf: {
-    name: 'Windsurf',
-    method: 'MCP server',
-    copy: 'Add neuDrive as an MCP server.',
-  },
-  other: {
-    name: 'Other MCP Client',
-    method: 'Remote MCP',
-    copy: 'Use the remote MCP URL with any compatible client.',
-  },
-}
+type McpTabKey = Exclude<PlatformKey, 'other'>
 
 function normalizePlatform(raw?: string): PlatformKey | '' {
   const value = (raw || '').toLowerCase()
@@ -46,161 +12,179 @@ function normalizePlatform(raw?: string): PlatformKey | '' {
   return ''
 }
 
-function platformConnected(platform: PlatformKey, connections: ConnectionResponse[], grants: OAuthGrantResponse[]) {
-  const terms = platform === 'other' ? ['mcp', 'api', 'custom'] : [platform]
-  const manual = connections.some((connection) => {
-    const haystack = `${connection.platform} ${connection.name}`.toLowerCase()
-    return terms.some((term) => haystack.includes(term))
-  })
-  const oauth = grants.some((grant) => {
-    const haystack = `${grant.app?.name || ''} ${grant.app?.client_id || ''} ${(grant.app?.redirect_uris || []).join(' ')}`.toLowerCase()
-    return terms.some((term) => haystack.includes(term))
-  })
-  return manual || oauth
+function tabFromPlatform(platform: PlatformKey | ''): McpTabKey {
+  if (platform === 'chatgpt' || platform === 'cursor' || platform === 'windsurf') return platform
+  return 'claude'
 }
 
 export default function OnboardingPage() {
   const { tx } = useI18n()
-  const navigate = useNavigate()
   const params = useParams()
-  const selectedPlatform = normalizePlatform(params.platform)
-  const [step, setStep] = useState(selectedPlatform ? 1 : 0)
-  const [testStatus, setTestStatus] = useState('')
-  const [testing, setTesting] = useState(false)
+  const location = useLocation()
+  const selectedPlatform = normalizePlatform(params.platform || (location.state as { platform?: string } | null)?.platform)
+  const [activeTab, setActiveTab] = useState<McpTabKey>(tabFromPlatform(selectedPlatform))
   const [copied, setCopied] = useState('')
   const mcpURL = `${window.location.origin}/mcp`
-  const platform = selectedPlatform ? platformCatalog[selectedPlatform] : null
+  const profileTestPrompt = 'Read my neuDrive profile and summarize what you know about my working preferences.'
+  const projectTestPrompt = tx('请读取当前项目，并把项目背景、开发约定和常用命令保存到 neuDrive。', 'Please read the current project and save its background, development conventions, and common commands to neuDrive.')
 
   useEffect(() => {
-    setStep(selectedPlatform ? 1 : 0)
-    setTestStatus('')
+    setActiveTab(tabFromPlatform(selectedPlatform))
   }, [selectedPlatform])
 
-  const steps = useMemo(() => [
-    tx('选择工具', 'Choose tool'),
-    tx('配置连接', 'Configure'),
-    tx('导入数据', 'Import data'),
-    tx('测试', 'Test'),
-    tx('完成', 'Done'),
+  const mcpGuides = useMemo(() => [
+    {
+      key: 'claude' as const,
+      label: 'Claude',
+      title: tx('在 Claude 添加 Connector', 'Add a Connector in Claude'),
+      path: 'Claude → Settings → Connectors',
+      steps: [
+        tx('打开 Claude 设置里的 Connectors 页面。', 'Open the Connectors page in Claude settings.'),
+        tx('选择添加新的 custom connector，名称填写 neuDrive。', 'Add a new custom connector and name it neuDrive.'),
+        tx('把第 2 步里的 MCP URL 粘贴到 URL 字段，然后保存。', 'Paste the MCP URL from Step 2 into the URL field, then save.'),
+      ],
+      settingsUrl: 'https://claude.ai/settings/connectors',
+      settingsLabel: tx('打开 Claude Connectors', 'Open Claude Connectors'),
+    },
+    {
+      key: 'chatgpt' as const,
+      label: 'ChatGPT',
+      title: tx('在 ChatGPT 创建 App', 'Create an App in ChatGPT'),
+      path: 'ChatGPT → Settings → Apps → Advanced Settings',
+      steps: [
+        tx('打开 Settings → Apps → Advanced Settings。', 'Open Settings → Apps → Advanced Settings.'),
+        tx('如果 Developer mode 还没有开启，先开启 Developer mode。', 'If Developer mode is not enabled yet, turn it on first.'),
+        tx('点击 Create app，MCP Server URL 填写第 2 步里的地址，Authentication 保持 OAuth，然后保存。', 'Click Create app, paste the Step 2 address into MCP Server URL, keep Authentication as OAuth, then save.'),
+      ],
+      settingsUrl: 'https://chatgpt.com/apps#settings/Connectors/Advanced',
+      settingsLabel: tx('打开 ChatGPT App Settings', 'Open ChatGPT App Settings'),
+    },
+    {
+      key: 'cursor' as const,
+      label: 'Cursor',
+      title: tx('在 Cursor 添加 Custom MCP', 'Add a Custom MCP in Cursor'),
+      path: 'Cursor → Settings → Tools & MCPs → Add Custom MCP',
+      steps: [
+        tx('打开 Settings → Tools & MCPs → Add Custom MCP。', 'Open Settings → Tools & MCPs → Add Custom MCP.'),
+        tx('复制第 2 步里的 Cursor MCP config，粘贴到 Cursor 的 MCP 配置里。', 'Copy the Cursor MCP config from Step 2 and paste it into Cursor’s MCP settings.'),
+        tx('保存配置后点击 Connect、Authenticate 或 Open，按浏览器提示完成 neuDrive 授权。', 'After saving, click Connect, Authenticate, or Open, then finish neuDrive authorization in the browser.'),
+      ],
+    },
+    {
+      key: 'windsurf' as const,
+      label: 'Windsurf',
+      title: tx('在 Windsurf 添加 MCP Server', 'Add an MCP Server in Windsurf'),
+      path: 'Windsurf → Settings → Cascade → MCP Servers',
+      steps: [
+        tx('打开 Settings → Cascade → MCP Servers。', 'Open Settings → Cascade → MCP Servers.'),
+        tx('复制第 2 步里的 Windsurf MCP config，粘贴到 Windsurf 的 MCP Servers 配置里。', 'Copy the Windsurf MCP config from Step 2 and paste it into Windsurf’s MCP Servers settings.'),
+        tx('保存配置后点击 Connect、Authenticate 或 Open，按浏览器提示完成 neuDrive 授权。', 'After saving, click Connect, Authenticate, or Open, then finish neuDrive authorization in the browser.'),
+      ],
+    },
   ], [tx])
-
-  const choosePlatform = (key: PlatformKey) => {
-    navigate(`/onboarding/${key}`)
-  }
+  const activeGuide = mcpGuides.find((guide) => guide.key === activeTab) || mcpGuides[0]
+  const isEditorGuide = activeTab === 'cursor' || activeTab === 'windsurf'
+  const mcpPayload = activeTab === 'cursor'
+    ? JSON.stringify({ mcpServers: { neudrive: { url: mcpURL } } }, null, 2)
+    : activeTab === 'windsurf'
+      ? JSON.stringify({ mcpServers: { neudrive: { serverUrl: mcpURL } } }, null, 2)
+      : mcpURL
+  const step2Copy = isEditorGuide
+    ? tx('复制对应 MCP 配置，粘贴到编辑器的 MCP 设置里。', 'Copy the matching MCP config and paste it into the editor’s MCP settings.')
+    : tx('在平台的 MCP Server URL 字段里粘贴这个地址。', 'Paste this address into the platform’s MCP Server URL field.')
+  const copyButtonLabel = isEditorGuide ? tx('复制配置', 'Copy config') : tx('复制 URL', 'Copy URL')
+  const copiedButtonLabel = isEditorGuide ? tx('已复制配置 ✓', 'Config copied ✓') : tx('已复制 ✓', 'Copied ✓')
+  const activeTestPrompt = isEditorGuide ? projectTestPrompt : profileTestPrompt
 
   const copyText = async (value: string, key: string) => {
-    await navigator.clipboard?.writeText(value)
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = value
+        textarea.setAttribute('readonly', 'true')
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+    } catch {
+      // Still show UI feedback so the setup flow does not feel broken if clipboard permission is blocked.
+    }
     setCopied(key)
     window.setTimeout(() => setCopied(''), 1600)
   }
 
-  const testConnection = async () => {
-    if (!selectedPlatform) return
-    setTesting(true)
-    setTestStatus('')
-    try {
-      const [connections, grants] = await Promise.all([
-        api.getConnections().catch(() => []),
-        api.getOAuthGrants().catch(() => []),
-      ])
-      const connected = platformConnected(selectedPlatform, connections, grants)
-      setTestStatus(connected
-        ? tx('Connected', 'Connected')
-        : tx('No connection detected yet. Add the connector in your AI app, then test again.', 'No connection detected yet. Add the connector in your AI app, then test again.'))
-      if (connected) {
-        setStep(4)
-      }
-    } catch (err: any) {
-      setTestStatus(err?.message || tx('测试失败', 'Test failed'))
-    } finally {
-      setTesting(false)
-    }
-  }
-
   return (
     <div className="page onboarding-page">
-      <div className="page-header compact-header">
-        <div>
-          <h2>{selectedPlatform ? tx(`连接 ${platform?.name}`, `Connect ${platform?.name}`) : tx('连接你的第一个 AI 工具', 'Connect your first AI tool')}</h2>
-          <p className="page-subtitle">{tx('neuDrive 会在连接成功后成为你的 AI 记忆、文件和技能层。', 'After setup, neuDrive becomes the memory, files, and skills layer for your AI tools.')}</p>
-        </div>
-      </div>
-
-      <div className="onboarding-steps">
-        {steps.map((label, index) => (
-          <span key={label} className={index <= step ? 'is-active' : ''}>{index + 1}. {label}</span>
-        ))}
-      </div>
-
-      {!selectedPlatform && (
-        <section className="platform-grid">
-          {(Object.keys(platformCatalog) as PlatformKey[]).map((key) => (
-            <button key={key} className="platform-card" onClick={() => choosePlatform(key)}>
-              <strong>{platformCatalog[key].name}</strong>
-              <span>{platformCatalog[key].copy}</span>
-              <small>{platformCatalog[key].method}</small>
-            </button>
-          ))}
-        </section>
-      )}
-
-      {selectedPlatform && platform && (
-        <section className="setup-wizard">
-          <div className="setup-main">
-            <article className="wizard-card">
-              <div className="wizard-step-label">Step 1 of 4</div>
-              <h3>{tx('复制 MCP URL', 'Copy MCP URL')}</h3>
-              <code className="copy-code">{mcpURL}</code>
-              <button className="btn btn-primary" onClick={() => { void copyText(mcpURL, 'mcp') }}>
-                {copied === 'mcp' ? tx('已复制', 'Copied') : tx('复制 URL', 'Copy URL')}
+      <section className="setup-wizard mcp-setup-wizard">
+        <article className="wizard-card mcp-step-card">
+          <div className="wizard-step-label">{tx('第 1 步，共 3 步', 'Step 1 of 3')}</div>
+          <h3>{tx('打开平台设置并添加 neuDrive', 'Open platform settings and add neuDrive')}</h3>
+          <p>{tx('先选择你正在使用的平台，然后按对应入口去添加 neuDrive。', 'Choose your platform first, then use the matching entry point to add neuDrive.')}</p>
+          <div className="mcp-platform-tabs" role="tablist" aria-label={tx('平台接入入口', 'Platform setup entry')}>
+            {mcpGuides.map((guide) => (
+              <button
+                key={guide.key}
+                role="tab"
+                aria-selected={activeTab === guide.key}
+                className={activeTab === guide.key ? 'active' : ''}
+                onClick={() => setActiveTab(guide.key)}
+              >
+                {guide.label}
               </button>
-            </article>
-
-            <article className="wizard-card">
-              <div className="wizard-step-label">Step 2 of 4</div>
-              <h3>{tx('打开设置', 'Open settings')}</h3>
-              <p>{selectedPlatform === 'claude' ? 'Open Claude → Settings → Connectors.' : tx('打开你的 AI 工具设置，找到 MCP 或 Actions 配置。', 'Open your AI tool settings and find MCP or Actions configuration.')}</p>
-              {platform.settingsUrl ? (
-                <a className="btn btn-outline" href={platform.settingsUrl} target="_blank" rel="noreferrer">{tx('打开设置', 'Open settings')}</a>
-              ) : (
-                <button className="btn btn-outline" onClick={() => setStep(2)}>{tx('我已打开设置', 'I opened settings')}</button>
-              )}
-            </article>
-
-            <article className="wizard-card">
-              <div className="wizard-step-label">Step 3 of 4</div>
-              <h3>{tx('添加连接器', 'Add connector')}</h3>
-              <div className="setup-fields">
-                <div><span>Name</span><code>neuDrive</code></div>
-                <div><span>URL</span><code>{mcpURL}</code></div>
-              </div>
-              <button className="btn btn-outline" onClick={() => setStep(3)}>{tx('我已添加', 'I added it')}</button>
-            </article>
-
-            <article className="wizard-card">
-              <div className="wizard-step-label">Step 4 of 4</div>
-              <h3>{tx('测试连接', 'Test connection')}</h3>
-              <button className="btn btn-primary" disabled={testing} onClick={() => { void testConnection() }}>
-                {testing ? tx('测试中...', 'Testing...') : tx('测试连接', 'Test connection')}
-              </button>
-              {testStatus && <div className={`alert ${testStatus === 'Connected' ? 'alert-success' : 'alert-warn'}`}>{testStatus}</div>}
-            </article>
+            ))}
           </div>
+          <div className="mcp-platform-guide" role="tabpanel">
+            <div className="mcp-guide-heading">
+              <strong>{activeGuide.title}</strong>
+              <span>{activeGuide.path}</span>
+            </div>
+            <ol>
+              {activeGuide.steps.map((item) => <li key={item}>{item}</li>)}
+            </ol>
+            {activeGuide.settingsUrl && (
+              <a className="btn btn-outline" href={activeGuide.settingsUrl} target="_blank" rel="noreferrer">
+                {activeGuide.settingsLabel}
+              </a>
+            )}
+          </div>
+          <p className="mcp-other-note">
+            {tx('如果使用其他 MCP Client，在该工具的 MCP Server 设置里添加第 2 步里的 URL 即可。', 'For another MCP client, add the URL from Step 2 in that tool’s MCP Server settings.')}
+          </p>
+        </article>
 
-          <aside className="setup-aside">
-            <h3>{tx('导入第一份数据', 'Import your first data')}</h3>
-            <Link to="/imports/claude-export" className="btn btn-outline btn-block">{tx('上传导出 ZIP', 'Upload export ZIP')}</Link>
-            <Link to="/data/files" className="btn btn-outline btn-block">{tx('稍后导入', 'Skip for now')}</Link>
-            <h3>{tx('测试 Prompt', 'Test prompt')}</h3>
-            <p className="setup-prompt">Read my neuDrive profile and summarize what you know about my working preferences.</p>
-            <button className="btn btn-outline btn-block" onClick={() => { void copyText('Read my neuDrive profile and summarize what you know about my working preferences.', 'prompt') }}>
-              {copied === 'prompt' ? tx('已复制', 'Copied') : tx('复制 Prompt', 'Copy prompt')}
+        <article className="wizard-card mcp-step-card">
+          <div className="wizard-step-label">{tx('第 2 步，共 3 步', 'Step 2 of 3')}</div>
+          <h3>{tx('添加 MCP Server', 'Add MCP Server')}</h3>
+          <p>{step2Copy}</p>
+          <div className={isEditorGuide ? 'mcp-copy-row config-row' : 'mcp-copy-row'}>
+            <code>{mcpPayload}</code>
+            <button className="btn btn-primary" onClick={() => { void copyText(mcpPayload, 'mcp') }}>
+              {copied === 'mcp' ? copiedButtonLabel : copyButtonLabel}
             </button>
-            <Link to="/" className="btn btn-primary btn-block">{tx('打开 Dashboard', 'Open Dashboard')}</Link>
-            <Link to="/connections" className="btn btn-outline btn-block">{tx('连接另一个应用', 'Connect another app')}</Link>
-          </aside>
-        </section>
-      )}
+          </div>
+        </article>
+
+        <article className="wizard-card mcp-step-card">
+          <div className="wizard-step-label">{tx('第 3 步，共 3 步', 'Step 3 of 3')}</div>
+          <h3>{tx('在对话中测试', 'Test in chat')}</h3>
+          <p>{tx('连接保存后，在对应 AI 工具的新对话里发送这句话。', 'After saving the connection, send this in a new chat in that AI tool.')}</p>
+          <div className="mcp-copy-row prompt-row">
+            <code>{activeTestPrompt}</code>
+            <button className="btn btn-primary" onClick={() => { void copyText(activeTestPrompt, 'prompt') }}>
+              {copied === 'prompt' ? tx('已复制 ✓', 'Copied ✓') : tx('复制提示词', 'Copy prompt')}
+            </button>
+          </div>
+          <div className="mcp-step-actions">
+            <Link to="/" className="btn btn-primary">{tx('打开首页', 'Open Dashboard')}</Link>
+            <Link to="/connections" className="btn btn-outline">{tx('查看已连接应用', 'View connected apps')}</Link>
+          </div>
+        </article>
+      </section>
     </div>
   )
 }

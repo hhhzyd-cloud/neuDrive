@@ -353,21 +353,10 @@ export default function SystemSettingsPage() {
 
   return (
     <div className="page materials-page">
-      <section className="materials-hero">
-        <div className="materials-hero-copy">
-          <div className="materials-kicker">neuDrive Local</div>
-          <h2 className="materials-title">{tx('系统设置', 'System Settings')}</h2>
-          <p className="materials-subtitle">{tx('这里只保留本地 config.json 与 daemon 相关设置。Git Mirror 已拆到单独页面，方便 local 和 hosted 共用同一套操作流。', 'This page only manages the local config.json and daemon settings. Git Mirror now lives on its own page so local and hosted can share the same workflow.')}</p>
-        </div>
-      </section>
-
       <div className="materials-panel data-sync-card">
         <div className="card-header">
           <h3 className="card-title">{tx('本地配置', 'Local Configuration')}</h3>
         </div>
-        <p className="data-record-secondary">
-          {tx('“设置” 视图会把常用配置拆成更容易理解的表单，并解释每个字段的作用；“config.json” 视图则显示当前完整原始内容。', 'The "Settings" view breaks common configuration into more approachable fields with explanations, while "config.json" shows the full raw file content.')}
-        </p>
         {localConfig?.path && (
           <div className="data-record-secondary">
             {tx('文件位置：', 'File path: ')}<code>{localConfig.path}</code>

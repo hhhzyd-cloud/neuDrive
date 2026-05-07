@@ -97,13 +97,13 @@ neu browse         # 在浏览器里打开本地 Hub
 
 ## 登录官方云服务
 
-如果你希望登录 hosted `official` profile，并把 Claude 等 Web 应用接到 `https://www.neudrive.ai` 这个官方云 Hub，可以直接运行：
+如果你希望登录官方云 Hub，用于 CLI、Claude 等接入流程，可以直接运行：
 
 ```bash
 neu login
 ```
 
-这个命令会拉起浏览器登录流程，把 hosted `official` profile 保存到本地，并自动把当前 target 切到这个 profile。
+这个命令会拉起浏览器登录流程，把官方云 profile 保存到本地，并自动把当前 target 切到这个 profile。
 
 ## 文档索引
 

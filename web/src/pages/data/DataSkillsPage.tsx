@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, type FileNode, type SkillSummary } from '../../api'
+import GitHubTreeList from '../../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../../components/MaterialsSectionToolbar'
 import FileMaterialsTile from '../../components/FileMaterialsTile'
 import ResourceActionMenu from '../../components/ResourceActionMenu'
@@ -338,15 +339,27 @@ export default function DataSkillsPage() {
             <div className="materials-kicker">neuDrive Data</div>
             <h2 className="materials-title">{currentBundleContext?.name || bundleKey}</h2>
             <p className="materials-subtitle">
-              {tx('在 skill bundle 内继续下钻时，顶部会持续显示 bundle 上下文。', 'The bundle context stays visible while you browse deeper inside this skill bundle.')}
+              {tx('在技能包内继续下钻时，顶部会持续显示该技能包的上下文。', 'The bundle context stays visible while you browse deeper inside this skill bundle.')}
             </p>
           </div>
         </section>
 
         {error && <div className="alert alert-warn">{error}</div>}
         {!error && !currentBundleContext && (
-          <div className="alert alert-warn">{tx('没有找到这个 skill bundle。', 'This skill bundle could not be found.')}</div>
+          <div className="alert alert-warn">{tx('没有找到这个技能包。', 'This skill bundle could not be found.')}</div>
         )}
+
+        {currentBundleContext ? (
+          <GitHubTreeList
+            rootPath={currentBundlePath}
+            rootLabel={currentBundleContext.name}
+            initialPath={currentBrowsePath || currentBundlePath}
+            title={tx('技能文件', 'Skill files')}
+            description={tx('按 GitHub 文件列表样式浏览这个技能包的所有文件。', 'Browse every file in this skill bundle with the GitHub-style file list.')}
+            actionHref="/?type=Skill"
+            actionLabel={tx('在首页查看', 'View on Home')}
+          />
+        ) : null}
 
         {currentBundleContext ? (
           <section className="materials-section">
@@ -482,8 +495,8 @@ export default function DataSkillsPage() {
     <div className="page materials-page">
       <section className="materials-hero">
         <div className="materials-hero-copy">
-          <div className="materials-kicker">AI Toolbox</div>
-          <h2 className="materials-title">Skills</h2>
+          <div className="materials-kicker">{tx('AI 工具箱', 'AI Toolbox')}</div>
+          <h2 className="materials-title">{tx('技能', 'Skills')}</h2>
           <p className="materials-subtitle">{tx('Skills 是你的 AI 工具箱，可以被 Claude、ChatGPT、Cursor 等工具复用。', 'Reusable instructions and tools for your AI agents across Claude, ChatGPT, Cursor, and more.')}</p>
         </div>
         <div className="materials-actions">
@@ -494,12 +507,21 @@ export default function DataSkillsPage() {
 
       {error && <div className="alert alert-warn">{error}</div>}
 
+      <GitHubTreeList
+        rootPath="/skills"
+        rootLabel={tx('技能', 'Skills')}
+        title={tx('技能文件', 'Skill files')}
+        description={tx('按文件夹层级浏览所有技能包。', 'Browse all skill bundles by folder.')}
+        actionHref="/?type=Skill"
+        actionLabel={tx('在首页查看', 'View on Home')}
+      />
+
       {showNewForm && (
         <div className="materials-panel form-card">
           <div className="materials-section-head">
             <div>
               <h3 className="materials-section-title">{tx('新建技能', 'New skill')}</h3>
-              <p className="materials-section-copy">{tx('创建一个新的 skill bundle，并直接进入 ', 'Create a new skill bundle and jump straight into the ')}<code>SKILL.md</code>{tx(' 编辑器。', ' editor.')}</p>
+              <p className="materials-section-copy">{tx('创建一个新的技能包，并直接进入 ', 'Create a new skill bundle and jump straight into the ')}<code>SKILL.md</code>{tx(' 编辑器。', ' editor.')}</p>
             </div>
           </div>
           <form onSubmit={handleCreateSkill}>
@@ -530,8 +552,8 @@ export default function DataSkillsPage() {
       <section className="materials-section">
         <div className="materials-section-head">
           <div>
-            <h3 className="materials-section-title">Skill Bundles</h3>
-            <p className="materials-section-copy">{tx('统一按时间或名称浏览 skill bundle 卡片。', 'Browse skill bundle cards by time or name.')}</p>
+            <h3 className="materials-section-title">{tx('技能包', 'Skill Bundles')}</h3>
+            <p className="materials-section-copy">{tx('统一按时间或名称浏览技能包卡片。', 'Browse skill bundle cards by time or name.')}</p>
           </div>
           <MaterialsSectionToolbar
             count={filteredSkills.length}
@@ -563,7 +585,7 @@ export default function DataSkillsPage() {
         {filteredSkills.length === 0 ? (
           <div className="empty-state">
             <p>{tx('还没有技能内容', 'No skills yet')}</p>
-            <p className="empty-hint">{tx('导入或创建 skill bundle 后，会在这里看到对应文件夹。', 'Imported or newly created skill bundles will appear here.')}</p>
+            <p className="empty-hint">{tx('导入或创建技能包后，会在这里看到对应文件夹。', 'Imported or newly created skill bundles will appear here.')}</p>
           </div>
         ) : (
           <div className="materials-grid">

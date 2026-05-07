@@ -106,7 +106,7 @@ neu help write
 
 | 命令 | 作用 | 示例 |
 |------|------|------|
-| `neu login [--profile NAME] [--api-base URL] [--token TOKEN]` | 通过浏览器登录一个 hosted profile；`official` 是默认官方云 profile | `neu login` |
+| `neu login [--profile NAME] [--api-base URL] [--token TOKEN]` | 通过浏览器登录一个 hosted profile；默认登录官方云 | `neu login` |
 | `neu profiles` | 列出已保存的 hosted profile，并显示当前 active target | `neu profiles` |
 | `neu use <local\|profile>` | 切换当前默认 target | `neu use official` |
 | `neu whoami [--local \| --profile NAME \| --api-base URL --token TOKEN]` | 查看解析后 target 对应的当前身份 | `neu whoami` |

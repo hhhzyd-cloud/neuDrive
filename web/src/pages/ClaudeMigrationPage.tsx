@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   api,
   type LocalGitSyncInfo,
@@ -9,16 +9,44 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 
-type MigrationMode = "agent" | "all";
+type LocalImportPlatform = "claude" | "codex";
 
 interface ClaudeMigrationPageProps {
   localMode?: boolean;
-  platform?: "claude" | "codex";
-  displayName?: string;
+  initialPlatform?: LocalImportPlatform;
   officialExportPath?: string;
 }
 
-const modeOptions: MigrationMode[] = ["agent", "all"];
+const localImportPlatforms: Array<{
+  key: LocalImportPlatform;
+  label: string;
+  platform: "claude" | "codex";
+  displayName: string;
+  description: { zh: string; en: string };
+}> = [
+  {
+    key: "claude",
+    label: "Claude Code",
+    platform: "claude",
+    displayName: "Claude Code",
+    description: {
+      zh: "扫描当前机器上的 Claude Code 项目、记忆、skills、会话和可迁移资料。",
+      en: "Scan Claude Code projects, memory, skills, conversations, and portable local data on this machine.",
+    },
+  },
+  {
+    key: "codex",
+    label: "Codex",
+    platform: "codex",
+    displayName: "Codex",
+    description: {
+      zh: "扫描当前机器上的 Codex 配置、规则、skills、会话和可迁移资料。",
+      en: "Scan Codex config, rules, skills, sessions, and portable local data on this machine.",
+    },
+  },
+];
+
+const semanticMode = "agent" as const;
 
 function formatBytes(bytes: number | undefined, locale: "zh-CN" | "en") {
   if (!Number.isFinite(bytes) || !bytes || bytes <= 0)
@@ -118,12 +146,15 @@ function categoryLabel(name: string, tx: (zh: string, en: string) => string) {
 
 export default function ClaudeMigrationPage({
   localMode = false,
-  platform = "claude",
-  displayName = "Claude Code",
+  initialPlatform = "claude",
   officialExportPath,
 }: ClaudeMigrationPageProps) {
   const { locale, tx } = useI18n();
-  const [mode, setMode] = useState<MigrationMode>("agent");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlPlatform = searchParams.get("platform") === "codex" ? "codex" : "claude";
+  const [activePlatform, setActivePlatform] = useState<LocalImportPlatform>(
+    searchParams.has("platform") ? urlPlatform : initialPlatform,
+  );
   const [preview, setPreview] = useState<LocalPlatformImportPreview | null>(
     null,
   );
@@ -137,7 +168,17 @@ export default function ClaudeMigrationPage({
   const [success, setSuccess] = useState("");
   const [elapsedMs, setElapsedMs] = useState(0);
 
+  const selectedPlatform =
+    localImportPlatforms.find((item) => item.key === activePlatform) ||
+    localImportPlatforms[0];
+  const platform = selectedPlatform.platform;
+  const displayName = selectedPlatform.displayName;
   const previewing = taskStatus?.state === "running";
+
+  useEffect(() => {
+    if (!searchParams.has("platform")) return;
+    setActivePlatform(urlPlatform);
+  }, [searchParams, urlPlatform]);
 
   useEffect(() => {
     if (!localMode) return;
@@ -146,7 +187,7 @@ export default function ClaudeMigrationPage({
     setTaskStatus(null);
     setPreview(null);
     void api
-      .getLocalPlatformImportPreviewTask({ platform, mode })
+      .getLocalPlatformImportPreviewTask({ platform, mode: semanticMode })
       .then((data) => {
         if (cancelled) return;
         setTaskStatus(data.status || null);
@@ -165,7 +206,7 @@ export default function ClaudeMigrationPage({
     return () => {
       cancelled = true;
     };
-  }, [localMode, mode, platform]);
+  }, [localMode, platform]);
 
   useEffect(() => {
     if (!previewing || !taskStatus?.started_at) return;
@@ -183,7 +224,7 @@ export default function ClaudeMigrationPage({
     let cancelled = false;
     const interval = window.setInterval(() => {
       void api
-        .getLocalPlatformImportPreviewTask({ platform, mode })
+        .getLocalPlatformImportPreviewTask({ platform, mode: semanticMode })
         .then((data) => {
           if (cancelled) return;
           setTaskStatus(data.status || null);
@@ -195,7 +236,15 @@ export default function ClaudeMigrationPage({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [localMode, mode, platform, previewing]);
+  }, [localMode, platform, previewing]);
+
+  const selectPlatform = (next: LocalImportPlatform) => {
+    setActivePlatform(next);
+    setSearchParams(next === "claude" ? {} : { platform: next });
+    setError("");
+    setSuccess("");
+    setResult(null);
+  };
 
   const handleRefresh = async () => {
     setError("");
@@ -204,7 +253,7 @@ export default function ClaudeMigrationPage({
     try {
       const data = await api.startLocalPlatformImportPreviewTask({
         platform,
-        mode,
+        mode: semanticMode,
       });
       setTaskStatus(data.status || null);
       setPreview(data.preview || null);
@@ -230,7 +279,7 @@ export default function ClaudeMigrationPage({
     try {
       const response = await api.importLocalPlatform({
         platform,
-        mode,
+        mode: semanticMode,
       });
       setResult(response.data);
       setSyncInfo(response.localGitSync || null);
@@ -320,24 +369,12 @@ export default function ClaudeMigrationPage({
 
   return (
     <div className="page materials-page">
-      <div className="page-header">
-        <div>
-            <h2>{displayName}</h2>
-            <p className="page-subtitle">
-              {tx(
-                `本地扫描并迁移 ${displayName} 数据。默认导入会重建可提升的数据；如果需要，也可以顺带保留完整原始快照。`,
-                `Scan and migrate local ${displayName} data. The default import rebuilds the promotable data, and you can also keep the full raw snapshot when needed.`,
-              )}
-            </p>
-        </div>
-      </div>
-
       {!localMode ? (
         <div className="card">
           <div className="alert alert-warn">
             {tx(
-              `这个页面只在本地模式下可用，因为它需要直接扫描当前机器上的 ${displayName} 文件。`,
-              `This page is only available in local mode because it needs to scan ${displayName} files on this machine directly.`,
+              "这个页面只在本地模式下可用，因为它需要直接扫描当前机器上的 App 文件。",
+              "This page is only available in local mode because it needs to scan app files on this machine directly.",
             )}
           </div>
           <div
@@ -363,85 +400,61 @@ export default function ClaudeMigrationPage({
         </div>
       ) : (
         <>
-          <section className="materials-hero migration-hero">
-            <div className="materials-hero-copy">
-              <div className="materials-kicker">
-                {tx("Scan First", "Scan First")}
+          <section className="local-import-layout">
+            <div className="card local-import-action-card">
+              <div className="card-header">
+                <h3 className="card-title">{tx("本地 App Data 导入", "Local app data import")}</h3>
+                <span className="status-pill">{tx("语义迁移", "Semantic import")}</span>
               </div>
-              <h3 className="materials-title">
-                {tx("先看清楚再迁移", "See the shape before you migrate")}
-              </h3>
-              <p className="materials-subtitle">
-                {tx(
-                  "推荐先用默认导入预览检查 projects、memory、skills、会话和敏感项；如果还想保留平台原始文件，再打开原始快照选项。",
-                  "Start with the default import preview to inspect projects, memory, skills, conversations, and sensitive findings; enable the raw snapshot option only when you also want the original platform files.",
-                )}
-              </p>
-              <div className="migration-mode-grid">
-                {modeOptions.map((option) => (
+              <div className="local-import-tabs" role="tablist" aria-label={tx("选择本地 App", "Choose local app")}>
+                {localImportPlatforms.map((item) => (
                   <button
-                    key={option}
+                    key={item.key}
                     type="button"
-                    className={`migration-mode-card ${mode === option ? "is-active" : ""}`}
-                    onClick={() => setMode(option)}
+                    role="tab"
+                    aria-selected={activePlatform === item.key}
+                    className={activePlatform === item.key ? "is-active" : ""}
+                    onClick={() => selectPlatform(item.key)}
                   >
-                    <div className="migration-mode-title">
-                      {option === "agent" &&
-                        tx("默认导入", "Default import")}
-                      {option === "all" &&
-                        tx("导入 + 原始快照", "Import + raw snapshot")}
-                    </div>
-                    <div className="migration-mode-copy">
-                      {option === "agent" &&
-                        tx(
-                          `推荐。把可提升的 ${displayName} 数据导入成一等 neuDrive 内容。`,
-                          `Recommended. Import durable ${displayName} data as first-class neuDrive content.`,
-                        )}
-                      {option === "all" &&
-                        tx(
-                          "同时把原始平台文件保留在 /platforms 下。",
-                          "Keep the raw platform files under /platforms as well.",
-                        )}
-                    </div>
+                    {item.label}
                   </button>
                 ))}
               </div>
+              <p className="local-import-copy">
+                {tx(selectedPlatform.description.zh, selectedPlatform.description.en)}
+              </p>
+              <div className="page-actions">
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={previewing || importing || loadingPreviewTask}
+                  onClick={() => void handleRefresh()}
+                >
+                  {previewing
+                    ? tx("扫描中...", "Scanning...")
+                    : taskStatus
+                      ? tx("重新扫描", "Scan again")
+                      : tx("扫描", "Scan")}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  disabled={previewing || importing}
+                  onClick={() => void handleImport()}
+                >
+                  {importing
+                    ? tx("导入中...", "Importing...")
+                    : tx("导入", "Import")}
+                </button>
+              </div>
+              <div className="local-import-command">
+                <div className="local-import-command-label">{tx("也可使用终端命令", "Terminal command")}</div>
+                <pre className="migration-command">
+                  {preview?.next_command ||
+                    `neu import ${platform} --dry-run`}
+                </pre>
+              </div>
             </div>
-            <div className="page-actions">
-              {officialExportPath ? (
-                <Link to={officialExportPath} className="btn">
-                  {tx("Claude 导出 ZIP", "Claude Export ZIP")}
-                </Link>
-              ) : null}
-              <button
-                className="btn"
-                type="button"
-                disabled={previewing || importing || loadingPreviewTask}
-                onClick={() => void handleRefresh()}
-              >
-                {previewing
-                  ? tx("扫描中...", "Scanning...")
-                  : taskStatus
-                    ? tx("重新扫描", "Scan again")
-                    : tx("开始扫描", "Start scan")}
-              </button>
-              <button
-                className="btn btn-primary"
-                type="button"
-                disabled={previewing || importing}
-                onClick={() => void handleImport()}
-              >
-                {importing
-                  ? tx("导入中...", "Importing...")
-                  : tx("导入到 neuDrive", "Import into neuDrive")}
-              </button>
-            </div>
-            {scanTimingLabel ? (
-              <p className="migration-timing-note">{scanTimingLabel}</p>
-            ) : null}
-            {!previewing && lastScanMetaLabel ? (
-              <p className="migration-timing-note">{lastScanMetaLabel}</p>
-            ) : null}
           </section>
 
           {error && <div className="alert alert-warn">{error}</div>}
@@ -450,43 +463,16 @@ export default function ClaudeMigrationPage({
             <div className="alert alert-ok">{syncInfo.message}</div>
           )}
 
-          <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-value">{totalDiscovered}</div>
-              <div className="stat-label">{tx("已发现项", "Discovered")}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{totalImportable}</div>
-              <div className="stat-label">{tx("可导入项", "Importable")}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">
-                {previewSensitiveFindings.length}
-              </div>
-              <div className="stat-label">
-                {tx("敏感项", "Sensitive findings")}
-              </div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">
-                {previewVaultCandidates.length}
-              </div>
-              <div className="stat-label">
-                {tx("Vault 候选", "Vault candidates")}
-              </div>
-            </div>
-          </div>
-
-          <div className="dashboard-content-grid">
-            <div className="card dashboard-card">
+          <div className="local-import-results-grid">
+            <div className="card dashboard-card local-import-categories-card">
               <div className="card-header">
                 <h3 className="card-title">
                   {tx("扫描分类", "Scan categories")}
                 </h3>
-                <span className="dashboard-card-link-muted">
-                  {tx("按迁移口径统计", "Grouped by migration outcome")}
-                </span>
               </div>
+              {lastScanMetaLabel ? (
+                <p className="migration-timing-note">{lastScanMetaLabel}</p>
+              ) : null}
               {!preview || previewCategories.length === 0 ? (
                 <p className="dashboard-empty-copy">
                   {previewing
@@ -496,132 +482,131 @@ export default function ClaudeMigrationPage({
                       : tx("还没有扫描结果。", "No preview data yet.")}
                 </p>
               ) : (
-                <div className="migration-category-list">
+                <div className="migration-category-table">
+                  <div className="migration-category-table-head">
+                    <span>{tx("分类", "Category")}</span>
+                    <span>{tx("发现", "Found")}</span>
+                    <span>{tx("可导入", "Importable")}</span>
+                    <span>{tx("归档", "Archived")}</span>
+                    <span>{tx("阻塞", "Blocked")}</span>
+                  </div>
                   {previewCategories.map((category) => (
                     <div
                       key={category.name}
-                      className="migration-category-item"
+                      className="migration-category-row"
                     >
                       <div className="migration-category-name">
                         {categoryLabel(category.name, tx)}
                       </div>
-                      <div className="migration-category-meta">
-                        {tx("发现", "Discovered")}: {category.discovered} ·{" "}
-                        {tx("可导入", "Importable")}: {category.importable} ·{" "}
-                        {tx("归档", "Archived")}: {category.archived} ·{" "}
-                        {tx("阻塞", "Blocked")}: {category.blocked}
-                      </div>
+                      <strong>{category.discovered}</strong>
+                      <strong>{category.importable}</strong>
+                      <span>{category.archived}</span>
+                      <span>{category.blocked}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="card dashboard-card">
-              <div className="card-header">
-                <h3 className="card-title">
-                  {tx("建议命令", "Suggested command")}
-                </h3>
-                <span className="dashboard-card-link-muted">
-                  {tx("CLI 和 dashboard 对齐", "Matches the CLI workflow")}
-                </span>
-              </div>
-              <pre className="migration-command">
-                {preview?.next_command ||
-                  `neu import ${platform} --dry-run`}
-              </pre>
-              <div className="migration-preview-totals">
-                <span>
-                  {tx("归档项", "Archived")}: {totalArchived}
-                </span>
-                <span>
-                  {tx("阻塞项", "Blocked")}: {totalBlocked}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="dashboard-content-grid">
-            <div className="card dashboard-card">
-              <div className="card-header">
-                <h3 className="card-title">
-                  {tx("敏感项", "Sensitive findings")}
-                </h3>
-                <span className="dashboard-card-link-muted">
-                  {tx(
-                    "默认只报告，不导入 secret 值",
-                    "Reported only; secret values are not imported by default",
-                  )}
-                </span>
-              </div>
-              {previewSensitiveFindings.length ? (
-                <div className="migration-finding-list">
-                  {previewSensitiveFindings.slice(0, 6).map((finding) => (
-                    <div
-                      key={`${finding.title}-${finding.redacted_example || ""}`}
-                      className="migration-finding-item"
-                    >
-                      <div className="migration-finding-head">
-                        <span
-                          className={`migration-severity migration-severity-${finding.severity || "high"}`}
+            <div className="local-import-side-stack">
+              <div className="card dashboard-card">
+                <div className="card-header">
+                  <h3 className="card-title">
+                    {tx("敏感项", "Sensitive findings")}
+                  </h3>
+                  <span className="dashboard-card-link-muted">
+                    {previewSensitiveFindings.length}
+                  </span>
+                </div>
+                {previewSensitiveFindings.length ? (
+                  <>
+                    <div className="migration-finding-list local-import-detail-list">
+                      {previewSensitiveFindings.slice(0, 2).map((finding) => (
+                        <div
+                          key={`${finding.title}-${finding.redacted_example || ""}`}
+                          className="migration-finding-item"
                         >
-                          {finding.severity || "high"}
-                        </span>
-                        <span className="migration-finding-title">
-                          {finding.title}
-                        </span>
-                      </div>
-                      <div className="migration-finding-copy">
-                        {finding.detail}
-                      </div>
-                      {finding.redacted_example ? (
-                        <code className="migration-inline-code">
-                          {finding.redacted_example}
-                        </code>
-                      ) : null}
+                          <div className="migration-finding-head">
+                            <span
+                              className={`migration-severity migration-severity-${finding.severity || "high"}`}
+                            >
+                              {finding.severity || "high"}
+                            </span>
+                            <span className="migration-finding-title">
+                              {finding.title}
+                            </span>
+                          </div>
+                          <div className="migration-finding-copy">
+                            {finding.detail}
+                          </div>
+                          {finding.redacted_example ? (
+                            <code className="migration-inline-code">
+                              {finding.redacted_example}
+                            </code>
+                          ) : null}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="dashboard-empty-copy">
-                  {tx(
-                    "这次扫描没有发现敏感项。",
-                    "This scan did not find any sensitive entries.",
-                  )}
-                </p>
-              )}
-            </div>
-
-            <div className="card dashboard-card">
-              <div className="card-header">
-                <h3 className="card-title">
-                  {tx("Vault 候选", "Vault candidates")}
-                </h3>
-                <span className="dashboard-card-link-muted">
-                  {tx("后续可以单独处理", "Follow up separately when needed")}
-                </span>
+                    {previewSensitiveFindings.length > 2 ? (
+                      <p className="local-import-more">
+                        {tx(
+                          `还有 ${previewSensitiveFindings.length - 2} 项未显示`,
+                          `${previewSensitiveFindings.length - 2} more hidden`,
+                        )}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="dashboard-empty-copy">
+                    {tx(
+                      "这次扫描没有发现敏感项。",
+                      "This scan did not find any sensitive entries.",
+                    )}
+                  </p>
+                )}
               </div>
-              {previewVaultCandidates.length ? (
-                <div className="migration-finding-list">
-                  {previewVaultCandidates.slice(0, 6).map((candidate) => (
-                    <div
-                      key={candidate.scope}
-                      className="migration-finding-item"
-                    >
-                      <div className="migration-finding-title">
-                        {candidate.scope}
-                      </div>
-                      <div className="migration-finding-copy">
-                        {candidate.description}
-                      </div>
-                    </div>
-                  ))}
+
+              <div className="card dashboard-card">
+                <div className="card-header">
+                  <h3 className="card-title">
+                    {tx("Vault 候选", "Vault candidates")}
+                  </h3>
+                  <span className="dashboard-card-link-muted">
+                    {previewVaultCandidates.length}
+                  </span>
                 </div>
-              ) : (
-                <p className="dashboard-empty-copy">
-                  {tx("还没有 Vault 候选项。", "No vault candidates yet.")}
-                </p>
-              )}
+                {previewVaultCandidates.length ? (
+                  <>
+                    <div className="migration-finding-list local-import-detail-list">
+                      {previewVaultCandidates.slice(0, 3).map((candidate) => (
+                        <div
+                          key={candidate.scope}
+                          className="migration-finding-item"
+                        >
+                          <div className="migration-finding-title">
+                            {candidate.scope}
+                          </div>
+                          <div className="migration-finding-copy">
+                            {candidate.description}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {previewVaultCandidates.length > 3 ? (
+                      <p className="local-import-more">
+                        {tx(
+                          `还有 ${previewVaultCandidates.length - 3} 项未显示`,
+                          `${previewVaultCandidates.length - 3} more hidden`,
+                        )}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="dashboard-empty-copy">
+                    {tx("还没有 Vault 候选项。", "No vault candidates yet.")}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

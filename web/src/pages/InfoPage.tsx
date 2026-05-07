@@ -1,47 +1,41 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, type ConnectionResponse, type FileNode, type MemoryConflict, type OAuthGrantResponse } from '../api'
+import { useEffect, useState } from 'react'
+import { api, type FileNode, type MemoryConflict } from '../api'
 import { useI18n } from '../i18n'
-import { sourceLabel } from './data/DataShared'
-
-interface InfoPageProps {
-  title?: string
-}
 
 const profileFields = [
-  { key: 'preferences', label: 'Work preferences' },
-  { key: 'writing_style', label: 'Writing style' },
-  { key: 'communication', label: 'Communication preferences' },
-  { key: 'principles', label: 'Decision style' },
+  { key: 'preferences', label: { zh: '工作偏好', en: 'Work preferences' } },
+  { key: 'writing_style', label: { zh: '写作风格', en: 'Writing style' } },
+  { key: 'communication', label: { zh: '沟通偏好', en: 'Communication preferences' } },
+  { key: 'principles', label: { zh: '决策风格', en: 'Decision style' } },
 ]
 
-function dataType(node: FileNode) {
-  const path = node.path.toLowerCase()
-  if (path.startsWith('/conversations/')) return 'Conversations'
-  if (path.startsWith('/memory/')) return 'Memory'
-  if (path.startsWith('/skills/')) return 'Skills'
-  if (path.startsWith('/projects/')) return 'Projects'
-  if (path.startsWith('/vault/')) return 'Vault items'
-  return 'Files'
-}
+const commonLanguages = [
+  { value: 'zh-CN', label: '中文（简体）' },
+  { value: 'zh-TW', label: '中文（繁體）' },
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' },
+  { value: 'fr', label: 'Français' },
+  { value: 'de', label: 'Deutsch' },
+  { value: 'es', label: 'Español' },
+  { value: 'pt-BR', label: 'Português (Brasil)' },
+  { value: 'it', label: 'Italiano' },
+  { value: 'nl', label: 'Nederlands' },
+  { value: 'ru', label: 'Русский' },
+  { value: 'ar', label: 'العربية' },
+  { value: 'hi', label: 'हिन्दी' },
+  { value: 'id', label: 'Bahasa Indonesia' },
+  { value: 'vi', label: 'Tiếng Việt' },
+  { value: 'th', label: 'ไทย' },
+  { value: 'tr', label: 'Türkçe' },
+  { value: 'pl', label: 'Polski' },
+]
 
-function trustLabel(level?: number) {
-  switch (level) {
-    case 1: return 'L1 Guest'
-    case 2: return 'L2 Shared'
-    case 3: return 'L3 Work Trust'
-    case 4: return 'L4 Full Trust'
-    default: return 'Inherited'
-  }
-}
-
-export default function InfoPage({ title }: InfoPageProps) {
+export default function InfoPage() {
   const { locale, tx } = useI18n()
-  const [profile, setProfile] = useState<Record<string, any>>({})
   const [values, setValues] = useState<Record<string, string>>({})
+  const [userProfile, setUserProfile] = useState<Record<string, any>>({})
   const [entries, setEntries] = useState<FileNode[]>([])
-  const [connections, setConnections] = useState<ConnectionResponse[]>([])
-  const [grants, setGrants] = useState<OAuthGrantResponse[]>([])
   const [conflicts, setConflicts] = useState<MemoryConflict[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState('')
@@ -51,18 +45,20 @@ export default function InfoPage({ title }: InfoPageProps) {
   const load = async () => {
     setLoading(true)
     setError('')
-    const [profileResult, snapshotResult, connectionsResult, grantsResult, conflictsResult] = await Promise.allSettled([
+    const [meResult, profileResult, snapshotResult, conflictsResult] = await Promise.allSettled([
+      api.getMe(),
       api.getProfile(),
       api.getTreeSnapshot('/'),
-      api.getConnections(),
-      api.getOAuthGrants(),
       api.getConflicts(),
     ])
+    const me = meResult.status === 'fulfilled' ? meResult.value || {} : {}
+    if (meResult.status === 'fulfilled') setUserProfile(me)
     if (profileResult.status === 'fulfilled') {
       const next = profileResult.value || {}
-      setProfile(next)
       const prefs = next.preferences || {}
       setValues({
+        display_name: String(me.display_name || next.display_name || prefs.display_name || ''),
+        language: String(me.language || locale),
         preferences: String(prefs.preferences || ''),
         writing_style: String(prefs.writing_style || ''),
         communication: String(prefs.communication || ''),
@@ -70,8 +66,6 @@ export default function InfoPage({ title }: InfoPageProps) {
       })
     }
     if (snapshotResult.status === 'fulfilled') setEntries(snapshotResult.value.entries)
-    if (connectionsResult.status === 'fulfilled') setConnections(connectionsResult.value || [])
-    if (grantsResult.status === 'fulfilled') setGrants(grantsResult.value || [])
     if (conflictsResult.status === 'fulfilled') setConflicts(conflictsResult.value || [])
     setLoading(false)
   }
@@ -80,31 +74,26 @@ export default function InfoPage({ title }: InfoPageProps) {
     void load()
   }, [])
 
-  const counts = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const entry of entries) {
-      map.set(dataType(entry), (map.get(dataType(entry)) || 0) + 1)
-    }
-    return ['Conversations', 'Memory', 'Skills', 'Files', 'Vault items', 'Projects'].map((label) => ({
-      label,
-      count: map.get(label) || 0,
-    }))
-  }, [entries])
-
-  const sources = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const entry of entries) {
-      const source = String(entry.source || entry.metadata?.source || entry.bundle_context?.source || 'system')
-      map.set(source, (map.get(source) || 0) + 1)
-    }
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8)
-  }, [entries])
-
   const saveProfile = async () => {
     setSaving('profile')
     setError('')
     try {
-      await api.upsertProfile({ preferences: values })
+      await Promise.all([
+        api.updateMe({
+          display_name: values.display_name || '',
+          bio: String(userProfile.bio || ''),
+          timezone: String(userProfile.timezone || 'UTC'),
+          language: values.language || locale,
+        }),
+        api.upsertProfile({
+          preferences: {
+            preferences: values.preferences || '',
+            writing_style: values.writing_style || '',
+            communication: values.communication || '',
+            principles: values.principles || '',
+          },
+        }),
+      ])
       setMessage(tx('Profile 已保存。', 'Profile saved.'))
       await load()
     } catch (err: any) {
@@ -162,106 +151,48 @@ export default function InfoPage({ title }: InfoPageProps) {
 
   return (
     <div className="page profile-page">
-      <div className="page-header compact-header">
-        <div>
-          <h2>{title || tx('My Profile', 'My Profile')}</h2>
-          <p className="page-subtitle">{tx('See what neuDrive knows about you, where it came from, and which agents can use it.', 'See what neuDrive knows about you, where it came from, and which agents can use it.')}</p>
-        </div>
-        <div className="page-actions">
-          <button className="btn btn-primary" disabled={saving !== ''} onClick={() => { void saveProfile() }}>{saving ? tx('保存中...', 'Saving...') : tx('保存 Profile', 'Save Profile')}</button>
-        </div>
-      </div>
-
       {message && <div className="alert alert-success">{message}</div>}
       {error && <div className="alert alert-warn">{error}</div>}
 
-      <section className="profile-layout">
-        <div className="card profile-main-card">
-          <div className="card-header">
-            <h3 className="card-title">{tx('What neuDrive knows about you', 'What neuDrive knows about you')}</h3>
-          </div>
-          <div className="profile-field-grid">
-            <div className="profile-readonly-field">
-              <span>Name</span>
-              <strong>{profile.display_name || '-'}</strong>
-            </div>
-            <div className="profile-readonly-field">
-              <span>Language preference</span>
-              <strong>{profile.language || locale}</strong>
-            </div>
-            {profileFields.map((field) => (
-              <label key={field.key} className="profile-edit-field">
-                <span>{field.label}</span>
-                <textarea value={values[field.key] || ''} onChange={(event) => setValues({ ...values, [field.key]: event.target.value })} />
-              </label>
-            ))}
-          </div>
+      <section className="card profile-main-card">
+        <div className="card-header">
+          <h3 className="card-title">{tx('neuDrive 了解你的信息', 'What neuDrive knows about you')}</h3>
+          <button className="btn btn-primary" disabled={saving !== ''} onClick={() => { void saveProfile() }}>{saving ? tx('保存中...', 'Saving...') : tx('保存', 'Save Profile')}</button>
         </div>
-
-        <aside className="card">
-          <div className="card-header">
-            <h3 className="card-title">Memory Map</h3>
-          </div>
-          <div className="memory-map-grid">
-            {counts.map((item) => (
-              <Link key={item.label} to={`/data/files?type=${encodeURIComponent(item.label.replace(/ items$/, ''))}`} className="memory-map-item">
-                <span>{item.label}</span>
-                <strong>{item.count}</strong>
-              </Link>
-            ))}
-          </div>
-        </aside>
-      </section>
-
-      <section className="profile-layout">
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">{tx('Data sources', 'Data sources')}</h3>
-          </div>
-          <div className="source-list">
-            {sources.map(([source, count]) => (
-              <div key={source} className="source-row">
-                <span>{sourceLabel(source, locale)}</span>
-                <strong>{count}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">{tx('Who can access your data?', 'Who can access your data?')}</h3>
-          </div>
-          <div className="source-list">
-            {connections.map((connection) => (
-              <div key={connection.id} className="source-row">
-                <span>{connection.name || connection.platform}</span>
-                <strong>{trustLabel(connection.trust_level)}</strong>
-              </div>
-            ))}
-            {grants.map((grant) => (
-              <div key={grant.id} className="source-row">
-                <span>{grant.app?.name || 'OAuth App'}</span>
-                <strong>{grant.scopes?.includes('admin') ? 'L4 Full Trust' : 'L3 Work Trust'}</strong>
-              </div>
-            ))}
-            {connections.length === 0 && grants.length === 0 && <p className="dashboard-empty-copy">{tx('No agents connected yet.', 'No agents connected yet.')}</p>}
-          </div>
+        <div className="profile-field-grid">
+          <label className="profile-edit-field">
+            <span>{tx('名称', 'Name')}</span>
+            <input className="input" value={values.display_name || ''} onChange={(event) => setValues({ ...values, display_name: event.target.value })} />
+          </label>
+          <label className="profile-edit-field">
+            <span>{tx('语言偏好', 'Language preference')}</span>
+            <select value={values.language || locale} onChange={(event) => setValues({ ...values, language: event.target.value })}>
+              {commonLanguages.map((language) => (
+                <option key={language.value} value={language.value}>{language.label}</option>
+              ))}
+            </select>
+          </label>
+          {profileFields.map((field) => (
+            <label key={field.key} className="profile-edit-field profile-long-field">
+              <span>{tx(field.label.zh, field.label.en)}</span>
+              <textarea value={values[field.key] || ''} onChange={(event) => setValues({ ...values, [field.key]: event.target.value })} />
+            </label>
+          ))}
         </div>
       </section>
 
       {conflicts.length > 0 && (
         <section className="card">
           <div className="card-header">
-            <h3 className="card-title">{tx('Memory conflicts', 'Memory conflicts')}</h3>
+            <h3 className="card-title">{tx('记忆冲突', 'Memory conflicts')}</h3>
           </div>
           <div className="conflict-list">
             {conflicts.map((conflict) => (
               <div key={conflict.id} className="conflict-card">
                 <strong>{conflict.category}</strong>
                 <div className="conflict-options">
-                  <div><span>{conflict.source_a}</span><p>{conflict.content_a}</p><button className="btn btn-outline" onClick={() => { void resolveConflict(conflict.id, 'keep_a') }}>Keep</button></div>
-                  <div><span>{conflict.source_b}</span><p>{conflict.content_b}</p><button className="btn btn-outline" onClick={() => { void resolveConflict(conflict.id, 'keep_b') }}>Keep</button></div>
+                  <div><span>{conflict.source_a}</span><p>{conflict.content_a}</p><button className="btn btn-outline" onClick={() => { void resolveConflict(conflict.id, 'keep_a') }}>{tx('保留', 'Keep')}</button></div>
+                  <div><span>{conflict.source_b}</span><p>{conflict.content_b}</p><button className="btn btn-outline" onClick={() => { void resolveConflict(conflict.id, 'keep_b') }}>{tx('保留', 'Keep')}</button></div>
                 </div>
               </div>
             ))}
@@ -271,13 +202,13 @@ export default function InfoPage({ title }: InfoPageProps) {
 
       <section className="card privacy-actions">
         <div className="card-header">
-          <h3 className="card-title">{tx('Privacy Actions', 'Privacy Actions')}</h3>
+          <h3 className="card-title">{tx('隐私操作', 'Privacy Actions')}</h3>
         </div>
         <div className="page-actions">
-          <button className="btn btn-outline" onClick={() => { void exportAll() }}>Export all data</button>
-          <button className="btn btn-outline" onClick={() => { void deleteImportedConversations() }}>Delete imported conversations</button>
-          <button className="btn btn-outline" onClick={() => { void clearMemory() }}>Clear memory</button>
-          <button className="btn btn-danger" onClick={() => { void revokeAllTokens() }}>Revoke all tokens</button>
+          <button className="btn btn-outline" onClick={() => { void exportAll() }}>{tx('导出全部数据', 'Export all data')}</button>
+          <button className="btn btn-outline" onClick={() => { void deleteImportedConversations() }}>{tx('删除导入会话', 'Delete imported conversations')}</button>
+          <button className="btn btn-outline" onClick={() => { void clearMemory() }}>{tx('清空记忆', 'Clear memory')}</button>
+          <button className="btn btn-danger" onClick={() => { void revokeAllTokens() }}>{tx('撤销全部 token', 'Revoke all tokens')}</button>
         </div>
       </section>
     </div>

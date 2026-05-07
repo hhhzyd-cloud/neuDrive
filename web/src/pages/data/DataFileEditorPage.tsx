@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import type { EditorView } from '@codemirror/view'
 import { api, type FileNode } from '../../api'
 import { useI18n } from '../../i18n'
-import { displayNameFromPath, fileNamespaceLabel, formatDateTime, isTextLikeFile, sourceLabel } from './DataShared'
+import { fileNamespaceLabel, formatDateTime, isTextLikeFile, sourceLabel } from './DataShared'
 import '@uiw/react-markdown-preview/markdown.css'
 
 const WorkbenchCodeEditor = lazy(() => import('./WorkbenchCodeEditor'))
@@ -37,6 +37,26 @@ function mimeTypeForPath(path: string, currentMimeType?: string) {
   if ((currentMimeType || '').toLowerCase() === 'application/json' || /\.json$/i.test(path)) return 'application/json'
   if (isTextLikeFile(path, currentMimeType)) return currentMimeType || 'text/plain'
   return 'text/plain'
+}
+
+function fileNameFromPath(path: string) {
+  return path.split('/').filter(Boolean).pop() || path
+}
+
+function siblingPathWithName(path: string, fileName: string) {
+  const parts = path.split('/').filter(Boolean)
+  const parent = parts.slice(0, -1).join('/')
+  const cleanName = fileName.trim()
+  return parent ? `/${parent}/${cleanName}` : `/${cleanName}`
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="m4 20 4.6-1.1L19.5 8a2.1 2.1 0 0 0 0-3L19 4.5a2.1 2.1 0 0 0-3 0L5.1 15.4 4 20Z" />
+      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="m14.5 6.5 3 3" />
+    </svg>
+  )
 }
 
 function toggleWrappedSelection(
@@ -233,10 +253,10 @@ export default function DataFileEditorPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [renamePath, setRenamePath] = useState(path)
+  const [renameName, setRenameName] = useState(fileNameFromPath(path))
+  const [editingTitle, setEditingTitle] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('write')
   const [mobileSplitPane, setMobileSplitPane] = useState<MobileSplitPane>('editor')
-  const [infoPanelOpen, setInfoPanelOpen] = useState(() => (typeof window === 'undefined' ? true : window.innerWidth >= 960))
   const [isCompactLayout, setIsCompactLayout] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth < 960))
   const [lastSavedAt, setLastSavedAt] = useState<string>()
   const [isEditorReady, setIsEditorReady] = useState(false)
@@ -256,7 +276,8 @@ export default function DataFileEditorPage() {
         if (!mounted) return
         setNode(data)
         setContent(data.content || '')
-        setRenamePath(data.path)
+        setRenameName(fileNameFromPath(data.path))
+        setEditingTitle(false)
         setLastSavedAt(data.updated_at || data.created_at)
       } catch (err: any) {
         setError(err.message || tx('加载文件失败', 'Failed to load file'))
@@ -270,9 +291,7 @@ export default function DataFileEditorPage() {
 
   useEffect(() => {
     const onResize = () => {
-      const compact = window.innerWidth < 960
-      setIsCompactLayout(compact)
-      if (!compact) setInfoPanelOpen(true)
+      setIsCompactLayout(window.innerWidth < 960)
     }
     onResize()
     window.addEventListener('resize', onResize)
@@ -282,7 +301,6 @@ export default function DataFileEditorPage() {
   useEffect(() => {
     setViewMode('write')
     setMobileSplitPane('editor')
-    setInfoPanelOpen(typeof window === 'undefined' ? true : window.innerWidth >= 960)
     allowNavigationRef.current = false
     setIsEditorReady(false)
   }, [path])
@@ -306,7 +324,7 @@ export default function DataFileEditorPage() {
         expectedChecksum: node.checksum,
       })
       setNode(saved)
-      setRenamePath(saved.path)
+      setRenameName(fileNameFromPath(saved.path))
       setLastSavedAt(saved.updated_at || new Date().toISOString())
       setSuccess(tx('保存成功', 'Saved'))
     } catch (err: any) {
@@ -325,11 +343,18 @@ export default function DataFileEditorPage() {
 
   const handleRename = useCallback(async () => {
     if (!node) return
-    const nextPath = renamePath.trim()
-    if (!nextPath || nextPath === path) {
-      setRenamePath(path)
+    const nextName = renameName.trim()
+    const currentName = fileNameFromPath(path)
+    if (!nextName || nextName === currentName) {
+      setRenameName(currentName)
+      setEditingTitle(false)
       return
     }
+    if (nextName.includes('/') || nextName.includes('\\')) {
+      setError(tx('只能修改文件名，不能修改路径。', 'Only the file name can be changed, not the path.'))
+      return
+    }
+    const nextPath = siblingPathWithName(path, nextName)
 
     setSaving(true)
     setError('')
@@ -344,6 +369,7 @@ export default function DataFileEditorPage() {
       await api.deleteTree(path)
       allowNavigationRef.current = true
       navigate(`/data/files/edit/${encodeURIComponent(nextPath.replace(/^\/+/, ''))}`, { replace: true })
+      setEditingTitle(false)
       setSuccess(tx('已重命名', 'Renamed'))
     } catch (err: any) {
       const msg = String(err.message || '')
@@ -355,7 +381,7 @@ export default function DataFileEditorPage() {
     } finally {
       setSaving(false)
     }
-  }, [content, navigate, node, path, renamePath, tx])
+  }, [content, navigate, node, path, renameName, tx])
 
   // 保存快捷键 Cmd/Ctrl+S
   useEffect(() => {
@@ -441,7 +467,7 @@ export default function DataFileEditorPage() {
     view.focus()
   }, [])
 
-  const title = displayNameFromPath(path)
+  const title = fileNameFromPath(path)
   const editorFallback = <div className="page-loading" style={{ minHeight: 240 }}>{tx('编辑器加载中...', 'Loading editor...')}</div>
   const previewFallback = <div className="page-loading" style={{ minHeight: 180 }}>{tx('预览加载中...', 'Loading preview...')}</div>
   const effectiveView = effectiveEditorViewMode(isMarkdownFile, viewMode)
@@ -478,8 +504,56 @@ export default function DataFileEditorPage() {
         <div className="editor-command-bar">
           <div className="editor-command-bar-row">
             <div className="editor-command-title-group">
-              <div className="editor-command-eyebrow">{tx('Markdown Workbench', 'Markdown Workbench')}</div>
-              <h2 className="editor-command-title">{title}</h2>
+              <div className="editor-title-edit-row">
+                {editingTitle ? (
+                  <>
+                    <input
+                      className="editor-title-input"
+                      value={renameName}
+                      autoFocus
+                      aria-label={tx('文件名', 'File name')}
+                      onChange={(event) => setRenameName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void handleRename()
+                        if (event.key === 'Escape') {
+                          setRenameName(title)
+                          setEditingTitle(false)
+                        }
+                      }}
+                    />
+                    <button className="btn btn-sm btn-primary" type="button" disabled={saving || !renameName.trim() || renameName === title} onClick={() => void handleRename()}>
+                      {saving ? tx('保存中…', 'Saving...') : tx('保存', 'Save')}
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      disabled={saving}
+                      onClick={() => {
+                        setRenameName(title)
+                        setEditingTitle(false)
+                      }}
+                    >
+                      {tx('还原', 'Reset')}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="editor-command-title">{title}</h2>
+                    <button
+                      className="editor-title-edit-button"
+                      type="button"
+                      aria-label={tx('重命名文件', 'Rename file')}
+                      title={tx('重命名文件', 'Rename file')}
+                      onClick={() => {
+                        setRenameName(title)
+                        setEditingTitle(true)
+                      }}
+                    >
+                      <PencilIcon />
+                    </button>
+                  </>
+                )}
+              </div>
               <div className="editor-command-status-row">
                 <span className={`editor-status-pill ${isDirty ? 'is-dirty' : 'is-clean'}`}>
                   {isDirty ? tx('未保存更改', 'Unsaved changes') : tx('已保存', 'Saved')}
@@ -516,9 +590,6 @@ export default function DataFileEditorPage() {
                   </button>
                 </div>
               )}
-              <button className="btn" type="button" onClick={() => setInfoPanelOpen((value) => !value)}>
-                {infoPanelOpen ? tx('隐藏详情', 'Hide details') : tx('查看详情', 'Details')}
-              </button>
               <button className="btn" type="button" onClick={handleBack}>{tx('返回', 'Back')}</button>
               <button className="btn btn-primary" type="button" onClick={() => void handleSave()} disabled={saving}>
                 {saving ? tx('保存中…', 'Saving...') : tx('保存', 'Save')}
@@ -547,7 +618,7 @@ export default function DataFileEditorPage() {
           )}
         </div>
 
-        <div className={`editor-workbench-layout ${infoPanelOpen ? 'is-info-open' : ''} ${isCompactLayout ? 'is-compact' : ''}`}>
+        <div className={`editor-workbench-layout ${isCompactLayout ? 'is-compact' : ''}`}>
           <div className="editor-workbench-main">
             {isCompactLayout && effectiveView === 'split' && isMarkdownFile && (
               <div className="editor-split-mobile-tabs">
@@ -612,59 +683,6 @@ export default function DataFileEditorPage() {
             </div>
           </div>
 
-          {isCompactLayout && infoPanelOpen && <button type="button" className="editor-info-backdrop" onClick={() => setInfoPanelOpen(false)} aria-label={tx('关闭详情面板', 'Close details')} />}
-
-          <aside className={`editor-info-panel ${infoPanelOpen ? 'is-open' : ''}`}>
-            <div className="editor-info-panel-header">
-              <div>
-                <div className="editor-info-eyebrow">{tx('文件信息', 'File details')}</div>
-                <h3>{tx('侧边信息', 'Info panel')}</h3>
-              </div>
-              {isCompactLayout && (
-                <button className="btn btn-sm" type="button" onClick={() => setInfoPanelOpen(false)}>
-                  {tx('关闭', 'Close')}
-                </button>
-              )}
-            </div>
-
-            <div className="editor-info-section">
-              <div className="editor-info-label">{tx('路径', 'Path')}</div>
-              <div className="editor-info-value editor-info-path">{node.path}</div>
-            </div>
-
-            <div className="editor-info-grid">
-              <div className="editor-info-card">
-                <div className="editor-info-label">{tx('命名空间', 'Namespace')}</div>
-                <div className="editor-info-value">{fileNamespaceLabel(node.path, locale)}</div>
-              </div>
-              <div className="editor-info-card">
-                <div className="editor-info-label">{tx('来源', 'Source')}</div>
-                <div className="editor-info-value">{sourceLabel(node.source, locale)}</div>
-              </div>
-              <div className="editor-info-card">
-                <div className="editor-info-label">{tx('类型', 'Type')}</div>
-                <div className="editor-info-value">{node.mime_type || (isMarkdownFile ? 'text/markdown' : 'text/plain')}</div>
-              </div>
-              <div className="editor-info-card">
-                <div className="editor-info-label">{tx('最近更新', 'Updated')}</div>
-                <div className="editor-info-value">{formatDateTime(node.updated_at || node.created_at, locale)}</div>
-              </div>
-            </div>
-
-            <div className="editor-info-section">
-              <div className="editor-info-label">{tx('重命名文件', 'Rename file')}</div>
-              <div className="editor-info-help">{tx('修改路径后会创建新文件并删除旧路径。', 'Renaming creates the file at the new path and deletes the old one.')}</div>
-              <div className="form-group">
-                <input value={renamePath} onChange={(e) => setRenamePath(e.target.value)} />
-              </div>
-              <div className="form-actions">
-                <button className="btn" type="button" disabled={saving || renamePath === path} onClick={() => setRenamePath(path)}>{tx('还原', 'Reset')}</button>
-                <button className="btn btn-primary" type="button" disabled={saving || !renamePath.trim() || renamePath === path} onClick={() => void handleRename()}>
-                  {saving ? tx('处理中…', 'Working...') : tx('重命名', 'Rename')}
-                </button>
-              </div>
-            </div>
-          </aside>
         </div>
       </div>
     </div>

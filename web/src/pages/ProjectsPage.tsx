@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, type FileNode } from '../api'
+import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../components/MaterialsSectionToolbar'
 import MaterialsTile from '../components/MaterialsTile'
 import FileMaterialsTile from '../components/FileMaterialsTile'
@@ -344,6 +345,18 @@ export default function ProjectsPage() {
         )}
 
         {currentBundleContext ? (
+          <GitHubTreeList
+            rootPath={currentBundlePath}
+            rootLabel={currentBundleContext.name}
+            initialPath={currentBrowsePath || currentBundlePath}
+            title={tx('项目文件', 'Project files')}
+            description={tx('按 GitHub 文件列表样式浏览这个项目的所有文件。', 'Browse every file in this project with the GitHub-style file list.')}
+            actionHref="/?type=Project"
+            actionLabel={tx('在首页查看', 'View on Home')}
+          />
+        ) : null}
+
+        {currentBundleContext ? (
           <section className="materials-section">
             <div className="materials-section-head">
               <div>
@@ -501,6 +514,15 @@ export default function ProjectsPage() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
+      <GitHubTreeList
+        rootPath="/projects"
+        rootLabel={tx('项目', 'Projects')}
+        title={tx('项目文件', 'Project files')}
+        description={tx('按文件夹层级浏览所有 Project bundle。', 'Browse all project bundles by folder.')}
+        actionHref="/?type=Project"
+        actionLabel={tx('在首页查看', 'View on Home')}
+      />
+
       {showNewForm && (
         <div className="materials-panel form-card">
           <div className="materials-section-head">
@@ -537,7 +559,7 @@ export default function ProjectsPage() {
       <section className="materials-section">
         <div className="materials-section-head">
           <div>
-            <h3 className="materials-section-title">Project Library</h3>
+            <h3 className="materials-section-title">{tx('项目库', 'Project Library')}</h3>
             <p className="materials-section-copy">{tx('统一浏览项目卡片，打开后进入 project bundle。', 'Browse project cards here, then open one into its project bundle.')}</p>
           </div>
           <MaterialsSectionToolbar

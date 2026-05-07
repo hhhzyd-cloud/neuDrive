@@ -4,25 +4,6 @@ import { api, type ConnectionResponse, type OAuthGrantResponse } from '../api'
 import { useI18n } from '../i18n'
 import { formatDateTime } from './data/DataShared'
 
-type Platform = {
-  key: string
-  name: string
-  method: string
-  setupTime: string
-  trust: string
-}
-
-const platforms: Platform[] = [
-  { key: 'claude', name: 'Claude', method: 'Remote MCP', setupTime: '~2 min', trust: 'L4 Full Trust' },
-  { key: 'chatgpt', name: 'ChatGPT Apps', method: 'Remote MCP via Apps', setupTime: '~3 min', trust: 'L3 Work Trust' },
-  { key: 'cursor', name: 'Cursor', method: 'MCP server', setupTime: '~2 min', trust: 'L3 Work Trust' },
-  { key: 'windsurf', name: 'Windsurf', method: 'MCP server', setupTime: '~2 min', trust: 'L3 Work Trust' },
-  { key: 'claude-code', name: 'Claude Code', method: 'CLI MCP', setupTime: '~2 min', trust: 'L4 Full Trust' },
-  { key: 'codex', name: 'Codex CLI', method: 'Remote MCP', setupTime: '~2 min', trust: 'L3 Work Trust' },
-  { key: 'gemini', name: 'Gemini CLI', method: 'Remote MCP', setupTime: '~2 min', trust: 'L3 Work Trust' },
-  { key: 'other', name: 'Other MCP Client', method: 'Remote MCP', setupTime: '~5 min', trust: 'Custom' },
-]
-
 type ConnectedRow = {
   id: string
   kind: 'manual' | 'oauth'
@@ -34,28 +15,14 @@ type ConnectedRow = {
   rawName: string
 }
 
-function trustLabel(level?: number) {
+function trustLabel(level: number | undefined, tx: (zh: string, en: string) => string) {
   switch (level) {
-    case 1: return 'L1 Guest'
-    case 2: return 'L2 Shared'
-    case 3: return 'L3 Work Trust'
-    case 4: return 'L4 Full Trust'
-    default: return 'Inherited'
+    case 1: return tx('L1 访客', 'L1 Guest')
+    case 2: return tx('L2 共享', 'L2 Shared')
+    case 3: return tx('L3 工作信任', 'L3 Work Trust')
+    case 4: return tx('L4 完全信任', 'L4 Full Trust')
+    default: return tx('继承', 'Inherited')
   }
-}
-
-function platformTerms(platform: string) {
-  if (platform === 'claude-code') return ['claude-code', 'claude code']
-  if (platform === 'other') return ['mcp', 'custom', 'other']
-  return [platform]
-}
-
-function isConnected(platform: string, rows: ConnectedRow[]) {
-  const terms = platformTerms(platform)
-  return rows.some((row) => {
-    const haystack = `${row.app} ${row.rawName} ${row.authMethod}`.toLowerCase()
-    return terms.some((term) => haystack.includes(term))
-  })
 }
 
 export default function ConnectionsPage() {
@@ -64,7 +31,6 @@ export default function ConnectionsPage() {
   const [grants, setGrants] = useState<OAuthGrantResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [testMessage, setTestMessage] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -87,10 +53,10 @@ export default function ConnectionsPage() {
     const manualRows = manual.map((connection) => ({
       id: connection.id,
       kind: 'manual' as const,
-      app: connection.platform || connection.name || 'Custom Agent',
-      status: 'Connected',
-      authMethod: connection.api_key_prefix ? 'Scoped token' : 'Manual',
-      trustLevel: trustLabel(connection.trust_level),
+      app: connection.platform || connection.name || tx('自定义 Agent', 'Custom Agent'),
+      status: tx('已连接', 'Connected'),
+      authMethod: connection.api_key_prefix ? tx('Scoped token', 'Scoped token') : tx('手动', 'Manual'),
+      trustLevel: trustLabel(connection.trust_level, tx),
       lastSync: connection.last_used_at || connection.created_at || '',
       rawName: `${connection.name} ${connection.platform}`,
     }))
@@ -98,9 +64,9 @@ export default function ConnectionsPage() {
       id: grant.id,
       kind: 'oauth' as const,
       app: grant.app?.name || 'OAuth App',
-      status: 'Connected',
+      status: tx('已连接', 'Connected'),
       authMethod: 'OAuth',
-      trustLevel: grant.scopes?.includes('admin') ? 'L4 Full Trust' : 'L3 Work Trust',
+      trustLevel: grant.scopes?.includes('admin') ? tx('L4 完全信任', 'L4 Full Trust') : tx('L3 工作信任', 'L3 Work Trust'),
       lastSync: grant.created_at,
       rawName: `${grant.app?.name || ''} ${grant.app?.client_id || ''} ${(grant.app?.redirect_uris || []).join(' ')}`,
     }))
@@ -118,78 +84,26 @@ export default function ConnectionsPage() {
     }
   }
 
-  const testPlatform = (platform: Platform) => {
-    const connected = isConnected(platform.key, rows)
-    setTestMessage(connected
-      ? tx(`${platform.name} is connected.`, `${platform.name} is connected.`)
-      : tx(`${platform.name} 还没有连接。打开接入向导完成配置。`, `${platform.name} is not connected yet. Open the setup wizard to finish configuration.`))
-  }
-
   if (loading) return <div className="page-loading">{tx('加载中...', 'Loading...')}</div>
 
   return (
     <div className="page connections-page">
-      <div className="page-header compact-header">
-        <div>
-          <h2>Connections</h2>
-          <p className="page-subtitle">{tx('Connect neuDrive to the AI tools you use every day.', 'Connect neuDrive to the AI tools you use every day.')}</p>
-        </div>
-        <div className="page-actions">
-          <Link to="/onboarding" className="btn btn-primary">{tx('连接应用', 'Connect app')}</Link>
-        </div>
-      </div>
-
       {error && <div className="alert alert-warn">{error}</div>}
-      {testMessage && <div className="alert alert-warn">{testMessage}</div>}
-
-      {rows.length === 0 && (
-        <section className="activation-banner">
-          <div>
-            <h3>{tx('No apps connected yet.', 'No apps connected yet.')}</h3>
-            <p>{tx('Start with Claude, ChatGPT or Cursor.', 'Start with Claude, ChatGPT or Cursor.')}</p>
-          </div>
-          <div className="activation-actions">
-            <Link className="btn btn-primary" to="/onboarding/claude">Connect Claude</Link>
-            <Link className="btn btn-outline" to="/onboarding/chatgpt">Connect ChatGPT</Link>
-            <Link className="btn btn-outline" to="/onboarding">More options</Link>
-          </div>
-        </section>
-      )}
-
-      <section className="platform-grid">
-        {platforms.map((platform) => {
-          const connected = isConnected(platform.key, rows)
-          return (
-            <article key={platform.key} className="platform-card platform-card-static">
-              <div className="platform-card-head">
-                <strong>{platform.name}</strong>
-                <span className={connected ? 'status-pill connected' : 'status-pill'}>{connected ? 'Connected' : 'Not connected'}</span>
-              </div>
-              <span>{platform.method} · {platform.setupTime}</span>
-              <small>{platform.trust}</small>
-              <div className="platform-card-actions">
-                <Link className="btn btn-primary" to={`/onboarding/${platform.key === 'claude-code' ? 'claude' : platform.key}`}>{connected ? 'Manage' : 'Connect'}</Link>
-                <button className="btn btn-outline" onClick={() => testPlatform(platform)}>Test</button>
-              </div>
-            </article>
-          )
-        })}
-      </section>
 
       <section className="card">
         <div className="card-header">
-          <h3 className="card-title">{tx('Connected Apps', 'Connected Apps')}</h3>
+          <h3 className="card-title">{tx('已连接应用', 'Connected Apps')}</h3>
         </div>
         {rows.length > 0 ? (
           <table className="data-table">
             <thead>
               <tr>
-                <th>App</th>
-                <th>Status</th>
-                <th>Auth method</th>
-                <th>Trust level</th>
-                <th>Last sync</th>
-                <th>Actions</th>
+                <th>{tx('应用', 'App')}</th>
+                <th>{tx('状态', 'Status')}</th>
+                <th>{tx('认证方式', 'Auth method')}</th>
+                <th>{tx('信任等级', 'Trust level')}</th>
+                <th>{tx('上次同步', 'Last sync')}</th>
+                <th>{tx('操作', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -202,8 +116,7 @@ export default function ConnectionsPage() {
                   <td>{formatDateTime(row.lastSync, locale)}</td>
                   <td>
                     <div className="table-actions">
-                      <button className="btn-text" onClick={() => setTestMessage(`${row.app}: Connected`)}>Test</button>
-                      <button className="btn-text" onClick={() => { void revoke(row) }}>Revoke</button>
+                      <button className="btn-text" onClick={() => { void revoke(row) }}>{tx('撤销', 'Revoke')}</button>
                     </div>
                   </td>
                 </tr>
@@ -212,8 +125,8 @@ export default function ConnectionsPage() {
           </table>
         ) : (
           <div className="empty-action-state">
-            <p>{tx('Connect your first AI app to start syncing memory.', 'Connect your first AI app to start syncing memory.')}</p>
-            <Link className="btn btn-primary" to="/onboarding">Connect now</Link>
+            <p>{tx('连接第一个 AI 应用后，neuDrive 就可以开始同步记忆。', 'Connect your first AI app to start syncing memory.')}</p>
+            <Link className="btn btn-primary" to="/onboarding">{tx('立即连接', 'Connect now')}</Link>
           </div>
         )}
       </section>

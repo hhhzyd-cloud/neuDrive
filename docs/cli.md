@@ -106,7 +106,7 @@ Use these commands when you want to sign in to hosted neuDrive and switch betwee
 
 | Command | What it does | Example |
 |---------|---------------|---------|
-| `neu login [--profile NAME] [--api-base URL] [--token TOKEN]` | Open browser login for a hosted profile; `official` is the default hosted profile | `neu login` |
+| `neu login [--profile NAME] [--api-base URL] [--token TOKEN]` | Open browser login for a hosted profile; default login uses the hosted neuDrive cloud | `neu login` |
 | `neu profiles` | List saved hosted profiles and show which target is active | `neu profiles` |
 | `neu use <local\|profile>` | Switch the current default target | `neu use official` |
 | `neu whoami [--local \| --profile NAME \| --api-base URL --token TOKEN]` | Show the active identity for the resolved target | `neu whoami` |

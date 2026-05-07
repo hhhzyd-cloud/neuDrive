@@ -72,7 +72,7 @@ export default function PlanGatePage({ billingEnabled = false }: PlanGatePagePro
     <div className="page app-narrow-page">
       <section className="plan-gate">
         <div className="plan-gate-head">
-          <p className="materials-kicker">Choose your plan</p>
+          <p className="materials-kicker">{tx('选择套餐', 'Choose your plan')}</p>
           <h2>{tx('选择你想怎样使用 neuDrive。', 'Choose how you want to use neuDrive.')}</h2>
           <p>
             {tx(
@@ -95,15 +95,15 @@ export default function PlanGatePage({ billingEnabled = false }: PlanGatePagePro
 
         <div className="plan-gate-grid">
           <article className="plan-option-card featured">
-            <span className="recommended-chip">Recommended</span>
-            <h3>Pro Yearly</h3>
-            <div className="pricing-price">$60 / year</div>
+            <span className="recommended-chip">{tx('推荐', 'Recommended')}</span>
+            <h3>{tx('Pro 年付', 'Pro Yearly')}</h3>
+            <div className="pricing-price">{tx('$60 / 年', '$60 / year')}</div>
             <p>{tx('Save 50% · 约 $5/月', 'Save 50% · about $5/month')}</p>
             <ul>
-              <li>{formatBillingStorage(proLimit, locale)} storage</li>
-              <li>Auto sync</li>
-              <li>Git backup</li>
-              <li>Priority import</li>
+              <li>{formatBillingStorage(proLimit, locale)} {tx('存储', 'storage')}</li>
+              <li>{tx('自动同步', 'Auto sync')}</li>
+              <li>{tx('GitHub 备份', 'Git backup')}</li>
+              <li>{tx('优先导入', 'Priority import')}</li>
             </ul>
             <button className="btn btn-primary btn-block" disabled={busy !== ''} onClick={() => { void startCheckout('pro_yearly') }}>
               {busy === 'pro_yearly' ? tx('跳转中...', 'Redirecting...') : tx('年付 Pro', 'Start Pro yearly')}
@@ -111,8 +111,8 @@ export default function PlanGatePage({ billingEnabled = false }: PlanGatePagePro
           </article>
 
           <article className="plan-option-card">
-            <h3>Pro Monthly</h3>
-            <div className="pricing-price">$10 / month</div>
+            <h3>{tx('Pro 月付', 'Pro Monthly')}</h3>
+            <div className="pricing-price">{tx('$10 / 月', '$10 / month')}</div>
             <p>{tx('先按月验证工作流。', 'Validate the workflow month to month.')}</p>
             <button className="btn btn-outline btn-block" disabled={busy !== ''} onClick={() => { void startCheckout('pro_monthly') }}>
               {busy === 'pro_monthly' ? tx('跳转中...', 'Redirecting...') : tx('月付 Pro', 'Start monthly')}
@@ -121,7 +121,7 @@ export default function PlanGatePage({ billingEnabled = false }: PlanGatePagePro
         </div>
 
         <button className="plan-free-link" type="button" onClick={continueFree}>
-          {tx('继续使用 Free', 'Continue with Free')} · {formatBillingStorage(freeLimit, locale)} storage
+          {tx('继续使用 Free', 'Continue with Free')} · {formatBillingStorage(freeLimit, locale)} {tx('存储', 'storage')}
         </button>
         <p className="login-note"><Link to="/">{tx('稍后再选', 'Decide later')}</Link></p>
       </section>

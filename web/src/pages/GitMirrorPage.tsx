@@ -385,8 +385,8 @@ export default function GitMirrorPage() {
       <section className="materials-hero">
         <div className="materials-hero-copy">
           <div className="materials-kicker">neuDrive Backup</div>
-          <h2 className="materials-title">{tx('Sync & Backup', 'Sync & Backup')}</h2>
-          <p className="materials-subtitle">{tx('把 neuDrive 数据备份到 Git，或随时导出 ZIP。用户关心的是备份、恢复和版本记录；Git 配置放在下方高级区域。', 'Back up your neuDrive data to Git or export it anytime. The focus is backup, recovery, and version history; Git details stay in the advanced area below.')}</p>
+          <h2 className="materials-title">{tx('GitHub 备份', 'GitHub Backup')}</h2>
+          <p className="materials-subtitle">{tx('把 neuDrive 数据备份到 GitHub，保留可恢复的版本记录，也可以随时导出 ZIP。', 'Back up your neuDrive data to GitHub with recoverable version history, or export a ZIP anytime.')}</p>
         </div>
         <div className="materials-actions">
           <button className="btn" type="button" onClick={() => { void api.exportZip() }}>
@@ -497,7 +497,7 @@ export default function GitMirrorPage() {
                 </select>
               </div>
               <div className="form-group">
-                <label htmlFor="git-mirror-remote-name">Remote name</label>
+                <label htmlFor="git-mirror-remote-name">{tx('远端名称', 'Remote name')}</label>
                 <input id="git-mirror-remote-name" value={draft.remote_name || ''} onChange={(e) => updateDraft({ remote_name: e.target.value })} />
               </div>
               <div className="form-group">
@@ -536,7 +536,7 @@ export default function GitMirrorPage() {
 
             {draft.auth_mode === 'github_app_user' && (
               <div className="data-sync-token-box">
-                <div className="data-record-title">GitHub App user</div>
+                <div className="data-record-title">{tx('GitHub App 用户', 'GitHub App user')}</div>
                 <div className="data-sync-field-note">{tx('由官方 GitHub App 代替用户手动粘贴 PAT。连接后可以直接选仓库或创建仓库。', 'Use the official GitHub App instead of pasting a PAT. Once connected, you can pick or create a repository directly.')}</div>
                 <div className="data-sync-actions data-sync-actions-compact">
                   {!mirror?.github_app_user_connected ? (
@@ -639,7 +639,7 @@ export default function GitMirrorPage() {
                     {showCreateRepo && (
                       <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
                         <div className="form-group">
-                          <label htmlFor="create-repo-owner">Owner</label>
+                          <label htmlFor="create-repo-owner">{tx('Owner', 'Owner')}</label>
                           <input
                             id="create-repo-owner"
                             list="git-mirror-owner-options"

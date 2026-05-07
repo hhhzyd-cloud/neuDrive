@@ -14,7 +14,7 @@ export default function SetupWebAppsPage() {
   return (
     <SetupSection
       icon={<>&#127760;</>}
-      title="Web / Desktop Apps"
+      title={tx('网页 / 桌面应用', 'Web / Desktop Apps')}
       description={tx('在网页应用或桌面图形应用里，把 neuDrive 添加成远程 MCP Server。', 'Add neuDrive as a remote MCP server inside web apps or desktop GUI apps.')}
       highlight
     >

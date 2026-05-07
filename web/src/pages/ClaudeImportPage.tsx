@@ -27,7 +27,7 @@ interface ClaudeImportPageProps {
 export default function ClaudeImportPage({ localMode = false }: ClaudeImportPageProps) {
   const { locale, tx } = useI18n()
   const navigate = useNavigate()
-  const importsHomePath = localMode ? '/imports/claude' : '/imports/claude-export'
+  const importsHomePath = localMode ? '/imports/local-apps' : '/imports/claude-export'
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -304,8 +304,8 @@ export default function ClaudeImportPage({ localMode = false }: ClaudeImportPage
             <button className="btn" type="button" onClick={() => navigate('/data/skills')}>
               {tx('打开 Skills', 'Open Skills')}
             </button>
-            <button className="btn" type="button" onClick={() => navigate('/data/files')}>
-              {tx('查看文件', 'Browse Files')}
+            <button className="btn" type="button" onClick={() => navigate('/')}>
+              {tx('在首页查看', 'View on Home')}
             </button>
           </div>
         </div>

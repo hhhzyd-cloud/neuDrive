@@ -24,7 +24,7 @@
 - `neu connect <platform>` 把本地 Claude/Codex/Gemini/Cursor 连到本地 Hub
 - `neu import <platform>` / `neu export <platform>` 处理平台数据，其中 Codex 和 Claude 默认优先走 agent-mediated 导入
 - `neu sync ...` 处理 bundle 迁移、备份、恢复
-- 需要云端工作区时，用 `neu login --profile official --api-base https://www.neudrive.ai`
+- 需要云端工作区时，用 `neu login`
 
 ### 平台接入的三层模型
 

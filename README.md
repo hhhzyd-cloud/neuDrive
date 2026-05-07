@@ -99,13 +99,13 @@ Detailed CLI usage: [CLI Guide](docs/cli.md)
 
 ## Login To Hosted Cloud
 
-Use `neu login` when you want the hosted `official` profile backed by `https://www.neudrive.ai` for CLI work, hosted dashboard access, or cross-app sync flows.
+Use the default login when you want the hosted cloud for CLI work, hosted dashboard access, or cross-app sync flows.
 
 ```bash
 neu login
 ```
 
-This opens a browser login flow, saves the hosted `official` profile locally, and switches the current target to that profile.
+This opens a browser login flow, saves the hosted profile locally, and switches the current target to it.
 
 ## Documentation
 

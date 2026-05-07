@@ -102,23 +102,23 @@ export default function BillingPage() {
         <>
           <div className="page-header compact-header">
             <div>
-              <h2>{tx('Upgrade to Pro', 'Upgrade to Pro')}</h2>
-              <p className="page-subtitle">Free plan · 10 MiB storage · Manual sync</p>
+              <h2>{tx('升级到 Pro', 'Upgrade to Pro')}</h2>
+              <p className="page-subtitle">{tx('Free 套餐 · 10 MiB 存储 · 手动同步', 'Free plan · 10 MiB storage · Manual sync')}</p>
             </div>
           </div>
 
           <section className="billing-upgrade-layout">
             <article className="plan-option-card featured">
-              <span className="recommended-chip">Recommended</span>
-              <h3>Pro Yearly</h3>
+              <span className="recommended-chip">{tx('推荐', 'Recommended')}</span>
+              <h3>{tx('Pro 年付', 'Pro Yearly')}</h3>
               <div className="pricing-price">{formatBillingPrice(yearly, locale)}</div>
-              <p>Save 50% with yearly</p>
+              <p>{tx('年付节省 50%', 'Save 50% with yearly')}</p>
               <ul>
-                <li>1 GiB storage</li>
-                <li>Auto sync</li>
-                <li>More storage</li>
-                <li>Git backup</li>
-                <li>Priority import</li>
+                <li>{tx('1 GiB 存储', '1 GiB storage')}</li>
+                <li>{tx('自动同步', 'Auto sync')}</li>
+                <li>{tx('更多存储空间', 'More storage')}</li>
+                <li>{tx('GitHub 备份', 'Git backup')}</li>
+                <li>{tx('优先导入', 'Priority import')}</li>
               </ul>
               <button className="btn btn-primary btn-block" disabled={busy !== '' || !status.can_checkout} onClick={() => { void checkout('pro_yearly') }}>
                 {busy === 'pro_yearly' ? tx('跳转中...', 'Redirecting...') : tx('年付升级', 'Upgrade yearly')}
@@ -126,7 +126,7 @@ export default function BillingPage() {
             </article>
 
             <article className="plan-option-card">
-              <h3>Pro Monthly</h3>
+              <h3>{tx('Pro 月付', 'Pro Monthly')}</h3>
               <div className="pricing-price">{formatBillingPrice(monthly, locale)}</div>
               <p>{tx('按月使用 Pro。', 'Use Pro month to month.')}</p>
               <button className="btn btn-outline btn-block" disabled={busy !== '' || !status.can_checkout} onClick={() => { void checkout('pro_monthly') }}>
@@ -155,22 +155,22 @@ export default function BillingPage() {
 
           <section className="billing-pro-summary">
             <div className="billing-pro-row">
-              <span>{tx('Current plan', 'Current plan')}</span>
+              <span>{tx('当前套餐', 'Current plan')}</span>
               <strong>{isPromo ? 'Pro Promo' : current?.name || status.current_plan}</strong>
             </div>
             <div className="billing-pro-row">
-              <span>{tx('Renewal', 'Renewal')}</span>
+              <span>{tx('续费时间', 'Renewal')}</span>
               <strong>{status.current_period_end ? formatDateTime(status.current_period_end, locale) : isPromo && status.promo?.ends_at ? formatDateTime(status.promo.ends_at, locale) : '-'}</strong>
             </div>
             <div className="billing-pro-row">
-              <span>{tx('Storage', 'Storage')}</span>
+              <span>{tx('存储', 'Storage')}</span>
               <strong>{formatBillingStorage(status.used_bytes, locale)} / {formatBillingStorage(status.limit_bytes, locale)}</strong>
             </div>
             <div className="billing-meter">
               <div className="billing-meter-fill" style={{ width: `${usagePercent}%` }} />
             </div>
             <div className="page-actions">
-              {status.can_manage_portal && <button className="btn btn-outline" disabled={busy !== ''} onClick={() => { void openPortal() }}>{tx('Download invoices', 'Download invoices')}</button>}
+              {status.can_manage_portal && <button className="btn btn-outline" disabled={busy !== ''} onClick={() => { void openPortal() }}>{tx('下载发票', 'Download invoices')}</button>}
               <a className="btn btn-outline" href="mailto:support@neudrive.ai">{tx('需要更多空间？联系我们', 'Need more storage? Contact us')}</a>
             </div>
           </section>
@@ -179,7 +179,7 @@ export default function BillingPage() {
 
       {status && (
         <section className="coupon-section">
-          <button className="btn-text" onClick={() => setShowCoupon((value) => !value)}>{tx('Have a coupon?', 'Have a coupon?')}</button>
+          <button className="btn-text" onClick={() => setShowCoupon((value) => !value)}>{tx('有兑换码？', 'Have a coupon?')}</button>
           {showCoupon && (
             <div className="coupon-form">
               <input className="input" value={redeemCode} placeholder={tx('输入兑换码', 'Enter promo code')} onChange={(event) => setRedeemCode(event.target.value)} />

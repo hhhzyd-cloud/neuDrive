@@ -5,7 +5,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
-import { Outlet, useLocation, useOutletContext } from 'react-router-dom'
+import { Outlet, useOutletContext } from 'react-router-dom'
 import { api, CreateTokenRequest, ScopedTokenResponse } from '../api'
 import { useI18n } from '../i18n'
 
@@ -131,7 +131,6 @@ export function useSetup() {
 
 export default function SetupPage() {
   const { tx } = useI18n()
-  const location = useLocation()
   const [tokens, setTokens] = useState<ScopedTokenResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -210,9 +209,23 @@ export default function SetupPage() {
   }, [])
 
   const copyToClipboard = useCallback((text: string, key: string) => {
-    navigator.clipboard.writeText(text).then(() => {
+    const fallbackCopy = () => {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', 'true')
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    const copyPromise = navigator.clipboard?.writeText
+      ? navigator.clipboard.writeText(text).catch(() => fallbackCopy())
+      : Promise.resolve(fallbackCopy())
+    copyPromise.finally(() => {
       setCopied(key)
-      setTimeout(() => setCopied(null), 2000)
+      setTimeout(() => setCopied(null), 1600)
     })
   }, [])
 
@@ -427,21 +440,9 @@ export default function SetupPage() {
   }
 
   const activeTokens = tokens.filter((token) => !token.is_revoked && !token.is_expired)
-  const isTokenManagementRoute = location.pathname === '/setup/tokens'
-  const pageTitle = isTokenManagementRoute ? tx('Token 管理', 'Token Manager') : tx('连接设置', 'Connection Setup')
-  const pageSubtitle = isTokenManagementRoute
-    ? tx('创建、改名、吊销和查看用于 API、脚本与高级 MCP 客户端的 Bearer Token。', 'Create, rename, revoke, and review Bearer tokens for APIs, scripts, and advanced MCP clients.')
-    : tx('把 neuDrive 配置到网页应用、CLI 和其他 MCP 客户端。', 'Configure neuDrive for web apps, CLIs, and other MCP clients.')
 
   return (
     <div className="page materials-page">
-      <div className="page-header page-header-stack">
-        <div>
-          <h2>{pageTitle}</h2>
-          <p className="page-subtitle">{pageSubtitle}</p>
-        </div>
-      </div>
-
       {error && <div className="alert alert-error">{error}</div>}
 
       <Outlet

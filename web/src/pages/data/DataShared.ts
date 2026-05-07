@@ -533,12 +533,12 @@ export function bundleDescription(bundle?: BundleInfo | null) {
 export function bundleKindLabel(kind: BundleKind, locale: AppLocale) {
   switch (kind) {
     case 'project':
-      return text(locale, '项目 Bundle', 'Project Bundle')
+      return text(locale, '项目包', 'Project Bundle')
     case 'conversation':
-      return text(locale, '会话 Bundle', 'Conversation Bundle')
+      return text(locale, '会话包', 'Conversation Bundle')
     case 'skill':
     default:
-      return text(locale, '技能 Bundle', 'Skill Bundle')
+      return text(locale, '技能包', 'Skill Bundle')
   }
 }
 
@@ -750,8 +750,8 @@ export function dataFileEditorRoute(path: string) {
 }
 
 export function dataFileBrowseRoute(path: string) {
-  const normalized = path.replace(/^\/+/, '')
-  return normalized ? `/data/files/${encodeHubRoutePath(path)}` : '/data/files'
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  return normalized === '/' ? '/' : `/?path=${encodeURIComponent(normalized)}`
 }
 
 export function normalizeBundleRelativeDir(value?: string | null) {

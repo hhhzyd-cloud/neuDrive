@@ -349,8 +349,8 @@ const integrations: IntegrationGuide[] = [
       en: 'For terminal users running Codex, Claude Code, Gemini CLI, or Cursor Agent.',
     },
     demo: {
-      zh: '登录 neuDrive，复制对应 CLI 命令，然后验证连接。',
-      en: 'Sign in to neuDrive, copy the matching CLI commands, then verify the connection.',
+      zh: '先登录 neuDrive 官网，再复制对应 CLI 命令并验证连接。',
+      en: 'First sign in to the neuDrive website, then copy the matching CLI commands and verify the connection.',
     },
     workflowSummary: {
       zh: '先登录 neuDrive，再选择你使用的 CLI 并复制对应命令。',
@@ -362,15 +362,15 @@ const integrations: IntegrationGuide[] = [
     },
     steps: [
       {
-        title: { zh: '先登录 neuDrive', en: 'Sign in to neuDrive' },
+        title: { zh: '先登录官方 neuDrive', en: 'Sign in to official neuDrive' },
         copy: {
-          zh: '运行下面命令。登录完成后，`neu` 会保存当前 neuDrive 账号。',
-          en: 'Run the commands below. After sign-in, `neu` saves your current neuDrive account.',
+          zh: '运行这一条命令即可登录 neuDrive 官网账号。',
+          en: 'Run this one command to sign in to your neuDrive website account.',
         },
         codes: [{
           label: { zh: 'neu hosted profile', en: 'neu hosted profile' },
           language: 'bash',
-          value: `neu login --profile official --api-base ${HUB_URL}\nneu status\nneu browse`,
+          value: 'neu login',
         }],
       },
       {
@@ -431,7 +431,7 @@ const integrations: IntegrationGuide[] = [
       en: 'CLI setup is for terminal-based work, connecting Codex, Claude Code, and similar agents to the same neuDrive data layer.',
     },
     detailHighlights: [
-      { zh: '用 `neu login` 设置官方 hosted profile。', en: 'Use `neu login` to set up the hosted profile.' },
+      { zh: '用 `neu login` 登录 neuDrive 官网账号。', en: 'Use `neu login` to sign in to your neuDrive website account.' },
       { zh: '为 Claude Code 或 Codex CLI 添加 remote MCP。', en: 'Add remote MCP for Claude Code or Codex CLI.' },
       { zh: '用 neu 命令导入、浏览和验证资料。', en: 'Use neu commands to import, browse, and verify material.' },
     ],
@@ -871,7 +871,7 @@ export function MarketingHomePage() {
               <Link to="/signup" className="btn btn-primary">{tx('3 分钟接入第一个 AI 工具', 'Connect your first agent in 3 min')}</Link>
               <a href="#how-it-works" className="btn btn-outline">{tx('查看如何接入', 'See how it works')}</a>
             </div>
-            <div className="public-hero-proof" aria-label="Product capabilities">
+            <div className="public-hero-proof" aria-label={tx('产品能力', 'Product capabilities')}>
               <span>{tx('档案记忆', 'Profile memory')}</span>
               <span>{tx('私密数据控制', 'Private data control')}</span>
               <span>{tx('技能路由', 'Skill routing')}</span>
@@ -881,7 +881,7 @@ export function MarketingHomePage() {
               <span />
             </a>
           </div>
-          <div className="public-product-visual public-product-visual-rich" aria-label="neuDrive product demonstration">
+          <div className="public-product-visual public-product-visual-rich" aria-label={tx('neuDrive 产品演示', 'neuDrive product demonstration')}>
             <div className="visual-grid" aria-hidden="true">
               {Array.from({ length: 48 }).map((_, index) => <span key={index} />)}
             </div>
@@ -932,7 +932,7 @@ export function MarketingHomePage() {
           </div>
         </section>
 
-        <section className="public-continuity-strip" aria-label="neuDrive product flow">
+        <section className="public-continuity-strip" aria-label={tx('neuDrive 产品流程', 'neuDrive product flow')}>
           <div>
             <span>01</span>
             <strong>{tx('连接一次', 'Connect once')}</strong>
@@ -993,14 +993,14 @@ export function MarketingHomePage() {
             <Link to={`/guides/${activeIntegration.key}`} className="btn btn-outline">{tx('查看演示指南', 'Open demo guide')}</Link>
           </div>
           <div className="workflow-shell">
-            <div className="workflow-picker" role="tablist" aria-label="Integration setup demos">
+            <div className="workflow-picker" role="tablist" aria-label={tx('集成接入演示', 'Integration setup demos')}>
               {integrations.map((item) => (
                 <button
                   key={item.key}
                   className={item.key === activeKey ? 'active' : ''}
                   type="button"
                   role="tab"
-                  aria-label={`Show ${item.name} setup demo`}
+                  aria-label={tx(`显示 ${item.name} 接入演示`, `Show ${item.name} setup demo`)}
                   aria-selected={item.key === activeKey}
                   onClick={() => setActiveKey(item.key)}
                 >
@@ -1158,21 +1158,21 @@ function PricingSection() {
       </div>
       <div className="pricing-public-grid">
         <article className="pricing-public-card">
-          <h3>Free</h3>
+          <h3>{tx('Free 免费版', 'Free')}</h3>
           <div className="pricing-price">$0</div>
           <p>{tx('10 MiB 存储', '10 MiB storage')}</p>
           <Link to="/signup" className="btn btn-outline">{tx('免费创建账号', 'Create free account')}</Link>
         </article>
         <article className="pricing-public-card featured">
           <span className="recommended-chip">{tx('推荐', 'Recommended')}</span>
-          <h3>Pro Yearly</h3>
-          <div className="pricing-price">$60 / year</div>
+          <h3>{tx('Pro 年付', 'Pro Yearly')}</h3>
+          <div className="pricing-price">{tx('$60 / 年', '$60 / year')}</div>
           <p>{tx('1 GiB 存储 · 自动同步 · Git 备份 · 优先导入', '1 GiB storage · Auto sync · Git backup · Priority import')}</p>
           <Link to="/signup?plan=pro_yearly" className="btn btn-primary">{tx('年付 Pro', 'Start Pro yearly')}</Link>
         </article>
         <article className="pricing-public-card">
-          <h3>Pro Monthly</h3>
-          <div className="pricing-price">$10 / month</div>
+          <h3>{tx('Pro 月付', 'Pro Monthly')}</h3>
+          <div className="pricing-price">{tx('$10 / 月', '$10 / month')}</div>
           <p>{tx('按月灵活使用 Pro 能力。', 'Use Pro month to month.')}</p>
           <Link to="/signup?plan=pro_monthly" className="btn btn-outline">{tx('月付 Pro', 'Start Pro monthly')}</Link>
         </article>
@@ -1268,9 +1268,9 @@ export function PricingPage() {
               <thead>
                 <tr>
                   <th>{tx('能力', 'Capability')}</th>
-                  <th>Free</th>
-                  <th>Pro Yearly</th>
-                  <th>Pro Monthly</th>
+                  <th>{tx('Free 免费版', 'Free')}</th>
+                  <th>{tx('Pro 年付', 'Pro Yearly')}</th>
+                  <th>{tx('Pro 月付', 'Pro Monthly')}</th>
                 </tr>
               </thead>
               <tbody>

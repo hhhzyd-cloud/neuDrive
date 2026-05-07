@@ -834,7 +834,7 @@ export default function DataSyncPage() {
                     />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="git-mirror-remote-name">Remote name</label>
+                    <label htmlFor="git-mirror-remote-name">{tx('远端名称', 'Remote name')}</label>
                     <div className="data-sync-field-note">{tx('当前固定使用 origin。', 'This is currently fixed to origin.')}</div>
                     <input
                       id="git-mirror-remote-name"

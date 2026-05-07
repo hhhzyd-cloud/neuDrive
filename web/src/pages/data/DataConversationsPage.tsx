@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type FileNode } from '../../api'
+import GitHubTreeList from '../../components/GitHubTreeList'
 import { useI18n } from '../../i18n'
 import { dataFileEditorRoute, formatDateTime, sourceLabel } from './DataShared'
 
@@ -16,10 +17,10 @@ function transcriptPath(node: FileNode) {
   return node.is_dir ? `${node.path.replace(/\/+$/, '')}/conversation.md` : node.path
 }
 
-function summaryFor(node: FileNode) {
+function summaryFor(node: FileNode, tx: (zh: string, en: string) => string) {
   const summary = node.metadata?.summary || node.metadata?.description || node.bundle_context?.description
   if (typeof summary === 'string' && summary.trim()) return summary.trim()
-  return 'Ready to reuse as memory, project context, or a replay prompt.'
+  return tx('可复用为记忆、项目上下文或跨 Agent 提示。', 'Ready to reuse as memory, project context, or a replay prompt.')
 }
 
 export default function DataConversationsPage() {
@@ -54,7 +55,7 @@ export default function DataConversationsPage() {
 
   const statusFor = (node: FileNode) => {
     const hasSummary = Boolean(node.metadata?.summary || node.metadata?.description || node.bundle_context?.description)
-    return hasSummary ? 'Has summary' : 'Imported'
+    return hasSummary ? tx('已有摘要', 'Has summary') : tx('已导入', 'Imported')
   }
 
   const copyReplayPrompt = async (node: FileNode) => {
@@ -68,7 +69,7 @@ export default function DataConversationsPage() {
     const safeName = titleFor(node).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'conversation-memory'
     try {
       await api.writeTree(`/memory/${safeName}.md`, {
-        content: `# ${titleFor(node)}\n\nSource conversation: ${transcriptPath(node)}\n\n${summaryFor(node)}\n`,
+        content: `# ${titleFor(node)}\n\nSource conversation: ${transcriptPath(node)}\n\n${summaryFor(node, tx)}\n`,
         mimeType: 'text/markdown',
         metadata: { source: 'conversation', source_path: node.path },
         minTrustLevel: node.min_trust_level || node.bundle_context?.min_trust_level || 3,
@@ -121,9 +122,9 @@ export default function DataConversationsPage() {
     <div className="page conversations-page">
       <div className="page-header compact-header">
         <div>
-          <h2>Conversations</h2>
+          <h2>{tx('会话', 'Conversations')}</h2>
           <p className="page-subtitle">
-            {tx('Imported AI conversations that can become memory, project context or reusable references.', 'Imported AI conversations that can become memory, project context or reusable references.')}
+            {tx('已导入的 AI 会话可以变成记忆、项目上下文或可复用参考。', 'Imported AI conversations that can become memory, project context or reusable references.')}
           </p>
         </div>
         <div className="page-actions">
@@ -133,32 +134,41 @@ export default function DataConversationsPage() {
 
       {error && <div className={error.includes('失败') || error.toLowerCase().includes('failed') ? 'alert alert-warn' : 'alert alert-success'}>{error}</div>}
 
+      <GitHubTreeList
+        rootPath="/conversations"
+        rootLabel={tx('会话', 'Conversations')}
+        title={tx('会话文件', 'Conversation files')}
+        description={tx('按来源和导入批次浏览所有会话文件。', 'Browse all conversation files by source and import batch.')}
+        actionHref="/?type=Conversation"
+        actionLabel={tx('在首页查看', 'View on Home')}
+      />
+
       <section className="conversation-layout">
         <div className="conversation-list-panel">
           <div className="data-summary-grid compact">
-            <div className="data-summary-card"><span>Total</span><strong>{items.length}</strong><small>conversations</small></div>
+            <div className="data-summary-card"><span>{tx('总数', 'Total')}</span><strong>{items.length}</strong><small>{tx('会话', 'conversations')}</small></div>
             {sourceCounts.slice(0, 3).map(([source, count]) => (
-              <div key={source} className="data-summary-card"><span>{sourceLabel(source, locale)}</span><strong>{count}</strong><small>source</small></div>
+              <div key={source} className="data-summary-card"><span>{sourceLabel(source, locale)}</span><strong>{count}</strong><small>{tx('来源', 'source')}</small></div>
             ))}
           </div>
           <table className="data-table conversation-table">
             <thead>
               <tr>
-                <th>Title</th>
-                <th>Source</th>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th>{tx('标题', 'Title')}</th>
+                <th>{tx('来源', 'Source')}</th>
+                <th>{tx('日期', 'Date')}</th>
+                <th>{tx('状态', 'Status')}</th>
+                <th>{tx('操作', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {items.map((node) => (
                 <tr key={node.path} className={selected?.path === node.path ? 'is-selected' : ''} onClick={() => setSelected(node)}>
-                  <td><strong>{titleFor(node)}</strong><small>{summaryFor(node)}</small></td>
+                  <td><strong>{titleFor(node)}</strong><small>{summaryFor(node, tx)}</small></td>
                   <td>{sourceLabel(String(node.bundle_context?.source || node.source || node.metadata?.source || 'unknown'), locale)}</td>
                   <td>{formatDateTime(node.updated_at || node.created_at, locale)}</td>
                   <td>{statusFor(node)}</td>
-                  <td><button className="btn-text" onClick={(event) => { event.stopPropagation(); setSelected(node) }}>Open</button></td>
+                  <td><button className="btn-text" onClick={(event) => { event.stopPropagation(); setSelected(node) }}>{tx('打开', 'Open')}</button></td>
                 </tr>
               ))}
             </tbody>
@@ -169,24 +179,24 @@ export default function DataConversationsPage() {
           {selected ? (
             <>
               <h3>{titleFor(selected)}</h3>
-              <p>{summaryFor(selected)}</p>
+              <p>{summaryFor(selected, tx)}</p>
               <dl className="preview-meta">
-                <div><dt>Source</dt><dd>{sourceLabel(String(selected.bundle_context?.source || selected.source || selected.metadata?.source || 'unknown'), locale)}</dd></div>
-                <div><dt>Transcript</dt><dd><code>{transcriptPath(selected)}</code></dd></div>
-                <div><dt>Status</dt><dd>{statusFor(selected)}</dd></div>
-                <div><dt>Updated</dt><dd>{formatDateTime(selected.updated_at || selected.created_at, locale)}</dd></div>
+                <div><dt>{tx('来源', 'Source')}</dt><dd>{sourceLabel(String(selected.bundle_context?.source || selected.source || selected.metadata?.source || 'unknown'), locale)}</dd></div>
+                <div><dt>{tx('转录文件', 'Transcript')}</dt><dd><code>{transcriptPath(selected)}</code></dd></div>
+                <div><dt>{tx('状态', 'Status')}</dt><dd>{statusFor(selected)}</dd></div>
+                <div><dt>{tx('更新时间', 'Updated')}</dt><dd>{formatDateTime(selected.updated_at || selected.created_at, locale)}</dd></div>
               </dl>
               <div className="drawer-actions">
-                <Link className="btn btn-primary" to={dataFileEditorRoute(transcriptPath(selected))}>Open transcript</Link>
-                <button className="btn btn-outline" onClick={() => { void copyReplayPrompt(selected) }}>{copied === selected.path ? tx('已复制', 'Copied') : 'Replay into another agent'}</button>
-                <button className="btn btn-outline" onClick={() => { void convertToMemory(selected) }}>Convert to memory</button>
-                <button className="btn btn-outline" onClick={() => { void addToProject(selected) }}>Add to project</button>
-                <button className="btn btn-danger" onClick={() => { void deleteConversation(selected) }}>Delete</button>
+                <Link className="btn btn-primary" to={dataFileEditorRoute(transcriptPath(selected))}>{tx('打开转录', 'Open transcript')}</Link>
+                <button className="btn btn-outline" onClick={() => { void copyReplayPrompt(selected) }}>{copied === selected.path ? tx('已复制', 'Copied') : tx('Replay 到另一个 Agent', 'Replay into another agent')}</button>
+                <button className="btn btn-outline" onClick={() => { void convertToMemory(selected) }}>{tx('转为记忆', 'Convert to memory')}</button>
+                <button className="btn btn-outline" onClick={() => { void addToProject(selected) }}>{tx('添加到项目', 'Add to project')}</button>
+                <button className="btn btn-danger" onClick={() => { void deleteConversation(selected) }}>{tx('删除', 'Delete')}</button>
               </div>
             </>
           ) : (
             <div className="empty-action-state">
-              <p>{tx('No conversations yet.', 'No conversations yet.')}</p>
+              <p>{tx('还没有会话。', 'No conversations yet.')}</p>
               <Link className="btn btn-primary" to="/imports/claude-export">{tx('导入会话', 'Import conversations')}</Link>
             </div>
           )}

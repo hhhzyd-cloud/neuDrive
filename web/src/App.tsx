@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, BILLING_REDIRECT_EVENT, type BillingRedirectDetail, type BillingStatus, type DashboardStats, type PublicConfig } from './api'
 import LanguageToggle from './components/LanguageToggle'
 import { useI18n } from './i18n'
@@ -18,7 +18,6 @@ const SetupCloudPage = lazy(() => import('./pages/setup/SetupCloudPage'))
 const SetupLocalPage = lazy(() => import('./pages/setup/SetupLocalPage'))
 const SetupAdvancedPage = lazy(() => import('./pages/setup/SetupAdvancedPage'))
 const SetupGptActionsPage = lazy(() => import('./pages/setup/SetupGptActionsPage'))
-const FilesBrowserPage = lazy(() => import('./pages/data/FilesBrowserPage'))
 const DataFileEditorPage = lazy(() => import('./pages/data/DataFileEditorPage'))
 const DataSkillsPage = lazy(() => import('./pages/data/DataSkillsPage'))
 const DataMemoryPage = lazy(() => import('./pages/data/DataMemoryPage'))
@@ -32,6 +31,7 @@ const ClaudeMigrationPage = lazy(() => import('./pages/ClaudeMigrationPage'))
 const PlanGatePage = lazy(() => import('./pages/PlanGatePage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const DeveloperAccessPage = lazy(() => import('./pages/DeveloperAccessPage'))
+const CommandLineToolsPage = lazy(() => import('./pages/CommandLineToolsPage'))
 const MarketingHomePage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.MarketingHomePage })))
 const PricingPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.PricingPage })))
 const IntegrationsPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.IntegrationsPage })))
@@ -54,6 +54,31 @@ const emptyStats: DashboardStats = {
   pending: [],
 }
 
+function LegacyOnboardingRedirect() {
+  const { platform } = useParams()
+  if (platform === 'codex' || platform === 'gemini' || platform === 'claude-code') return <Navigate to="/setup/cli" replace />
+  if (platform === 'browser') return <Navigate to="/setup/web-apps" replace />
+  return <Navigate to="/setup/mcp" replace />
+}
+
+function LegacyDataFilesRedirect() {
+  const location = useLocation()
+  const wildcard = useParams()['*']
+  const params = new URLSearchParams(location.search)
+  params.delete('access')
+  if (wildcard) {
+    const decoded = decodeURIComponent(wildcard).replace(/^\/+/, '')
+    if (decoded) {
+      params.set('path', `/${decoded}`)
+      params.delete('type')
+      params.delete('source')
+      params.delete('q')
+    }
+  }
+  const search = params.toString()
+  return <Navigate to={`/${search ? `?${search}` : ''}`} replace />
+}
+
 function App() {
   const [user, setUser] = useState<any>(null)
   const [publicConfig, setPublicConfig] = useState<PublicConfig>({})
@@ -66,7 +91,7 @@ function App() {
   const systemSettingsEnabled = !!publicConfig?.system_settings_enabled
   const localMode = !!publicConfig?.local_mode
   const billingEnabled = !!publicConfig?.billing_enabled
-  const importsHomePath = localMode ? '/imports/claude' : '/imports/claude-export'
+  const importsHomePath = localMode ? '/imports/local-apps' : '/imports/claude-export'
 
   const checkAuth = useCallback(async () => {
     const clearAuthParamsFromURL = () => {
@@ -196,17 +221,19 @@ function App() {
       path.startsWith('/plan') ? 'Choose Plan' :
       path.startsWith('/onboarding') ? 'Get Started' :
       path.startsWith('/connections') ? 'Connections' :
-      path.startsWith('/sync-backup') || path.startsWith('/git-mirror') ? 'Sync & Backup' :
+      path.startsWith('/sync-backup') || path.startsWith('/git-mirror') ? 'GitHub Backup' :
       path.startsWith('/settings/billing') || path.startsWith('/billing') ? 'Plan & Billing' :
       path.startsWith('/settings/developer-access') || path.startsWith('/settings/developer') ? 'Developer Access' :
-      path.startsWith('/settings/security') ? 'Security' :
+      path.startsWith('/settings/security') ? 'System Settings' :
       path.startsWith('/settings/profile') || path.startsWith('/info') ? 'My Profile' :
+      path.startsWith('/cli') ? 'Command Line Tools' :
       path.startsWith('/setup') ? 'Setup Guide' :
       path.startsWith('/data/conversations') ? 'Conversations' :
       path.startsWith('/data/projects') || path.startsWith('/projects') ? 'Projects' :
       path.startsWith('/data') ? 'Data Explorer' :
       path.startsWith('/memory') ? 'Memory' :
       path.startsWith('/skills') ? 'Skills' :
+      path.startsWith('/imports/local-apps') || path.startsWith('/imports/claude') || path.startsWith('/imports/codex') ? 'Local App Data Import' :
       path.startsWith('/imports') ? 'Data Imports' :
       'neuDrive'
     document.title = pageTitle === 'neuDrive' ? 'neuDrive' : `${pageTitle} — neuDrive`
@@ -304,68 +331,55 @@ function App() {
         <nav className="sidebar-nav">
           <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <span className="nav-icon">■</span>
-            <span>Home</span>
+            <span>{tx('概览', 'Home')}</span>
           </NavLink>
 
-          {!hasConnection && (
-            <NavLink to="/onboarding" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <span className="nav-icon">◆</span>
-              <span>{tx('开始接入', 'Get Started')}</span>
-            </NavLink>
-          )}
-
-          <NavLink to="/connections" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">◇</span>
-            <span>Connections</span>
+          <NavLink to="/settings/profile" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">◎</span>
+            <span>{tx('个人资料', 'Profile')}</span>
           </NavLink>
 
-          <NavLink to="/data/files" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">▤</span>
-            <span>Data</span>
+          <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">⌘</span>
+            <span>{tx('开发者访问', 'Developer Access')}</span>
           </NavLink>
-
-          {hasConnection && (
-            <>
-              <NavLink to="/memory" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-                <span className="nav-icon">●</span>
-                <span>Memory</span>
-              </NavLink>
-              <NavLink to="/skills" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-                <span className="nav-icon">✦</span>
-                <span>Skills</span>
-              </NavLink>
-              <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-                <span className="nav-icon">↕</span>
-                <span>{tx('同步备份', 'Sync & Backup')}</span>
-              </NavLink>
-            </>
-          )}
-
-          <div className="nav-group settings-group">
-            <NavLink to="/settings/profile" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <span className="nav-icon">⚙</span>
-              <span>Settings</span>
-            </NavLink>
-            <div className="nav-submenu">
-              <NavLink to="/settings/profile" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>Profile</NavLink>
-              {billingEnabled && <NavLink to="/settings/billing" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>Plan & Billing</NavLink>}
-              <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>Developer Access</NavLink>
-              {systemSettingsEnabled && <NavLink to="/settings/security" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>Security</NavLink>}
-            </div>
-          </div>
 
           {localMode && (
-            <div className="nav-group">
-              <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-                <span className="nav-icon">⇩</span>
-                <span>{tx('数据导入', 'Data Imports')}</span>
-              </NavLink>
-            </div>
+            <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <span className="nav-icon">⇩</span>
+              <span>{tx('本地 App Data 导入', 'Local App Data Import')}</span>
+            </NavLink>
+          )}
+
+          {hasConnection && (
+            <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <span className="nav-icon">↕</span>
+              <span>{tx('GitHub 备份', 'GitHub Backup')}</span>
+            </NavLink>
+          )}
+
+          <NavLink to="/cli" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">›_</span>
+            <span>{tx('命令行工具', 'Command Line')}</span>
+          </NavLink>
+
+          {billingEnabled && (
+            <NavLink to="/settings/billing" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <span className="nav-icon">◈</span>
+              <span>{tx('套餐与账单', 'Plan & Billing')}</span>
+            </NavLink>
+          )}
+
+          {systemSettingsEnabled && (
+            <NavLink to="/settings/security" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <span className="nav-icon">⚙</span>
+              <span>{tx('系统设置', 'System Settings')}</span>
+            </NavLink>
           )}
         </nav>
 
         <div className="sidebar-footer">
-          {showUpgrade && <NavLink to="/plan" className="sidebar-upgrade">Upgrade to Pro</NavLink>}
+          {showUpgrade && <NavLink to="/plan" className="sidebar-upgrade">{tx('升级到 Pro', 'Upgrade to Pro')}</NavLink>}
           <LanguageToggle compact />
           <div className="sidebar-footer-row">
             <div className="user-info">
@@ -381,24 +395,28 @@ function App() {
           <Routes>
             <Route path="/" element={<DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} billingEnabled={billingEnabled} />} />
             <Route path="/plan" element={<PlanGatePage billingEnabled={billingEnabled} />} />
-            <Route path="/onboarding" element={<OnboardingPage />} />
-            <Route path="/onboarding/:platform" element={<OnboardingPage />} />
+            <Route path="/onboarding" element={<Navigate to="/setup/mcp" replace />} />
+            <Route path="/onboarding/:platform" element={<LegacyOnboardingRedirect />} />
             <Route path="/connections" element={<ConnectionsPage />} />
             <Route path="/sync-backup" element={<GitMirrorPage />} />
             <Route path="/git-mirror" element={<Navigate to="/sync-backup" replace />} />
             <Route path="/billing" element={<Navigate to="/settings/billing" replace />} />
             <Route path="/billing/success" element={billingEnabled ? <BillingSuccessPage /> : <Navigate to="/onboarding" replace />} />
             <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
-            <Route path="/settings/profile" element={<InfoPage title="My Profile" />} />
+            <Route path="/settings/profile" element={<InfoPage />} />
             <Route path="/settings/billing" element={billingEnabled ? <BillingPage /> : <Navigate to="/settings/profile" replace />} />
             <Route path="/settings/developer-access" element={<DeveloperAccessPage />} />
             <Route path="/settings/security" element={systemSettingsEnabled ? <SystemSettingsPage /> : <Navigate to="/settings/profile" replace />} />
             <Route path="/settings/developer" element={<Navigate to="/settings/developer-access" replace />} />
+            <Route path="/cli" element={<CommandLineToolsPage />} />
+            <Route path="/command-line-tools" element={<Navigate to="/cli" replace />} />
 
+            <Route path="/setup/mcp" element={<OnboardingPage />} />
             <Route path="/setup" element={<SetupPage />}>
-              <Route index element={<Navigate to="web-apps" replace />} />
+              <Route index element={<Navigate to="/setup/mcp" replace />} />
               <Route path="web-apps" element={<SetupWebAppsPage />} />
-              <Route path="cloud" element={<SetupCloudPage />} />
+              <Route path="cli" element={<SetupCloudPage />} />
+              <Route path="cloud" element={<Navigate to="/setup/cli" replace />} />
               <Route path="adapters" element={<Navigate to="/setup/web-apps" replace />} />
               <Route path="local" element={<SetupLocalPage />} />
               <Route path="advanced" element={<SetupAdvancedPage />} />
@@ -409,11 +427,11 @@ function App() {
 
             <Route path="/connections/import/claude" element={<ClaudeImportPage />} />
             <Route path="/data" element={<Outlet />}>
-              <Route index element={<Navigate to="files" replace />} />
+              <Route index element={<Navigate to="/" replace />} />
               <Route path="files/edit/*" element={<DataFileEditorPage />} />
-              <Route path="files/browse/*" element={<FilesBrowserPage />} />
-              <Route path="files/recent" element={<Navigate to="/data/files" replace />} />
-              <Route path="files/*" element={<FilesBrowserPage />} />
+              <Route path="files/browse/*" element={<LegacyDataFilesRedirect />} />
+              <Route path="files/recent" element={<Navigate to="/" replace />} />
+              <Route path="files/*" element={<LegacyDataFilesRedirect />} />
               <Route path="projects" element={<ProjectsPage />} />
               <Route path="projects/:projectName" element={<ProjectsPage />} />
               <Route path="conversations" element={<DataConversationsPage />} />
@@ -422,8 +440,8 @@ function App() {
               <Route path="skills/:bundleKey" element={<Navigate to="/skills" replace />} />
               <Route path="memory" element={<Navigate to="/memory" replace />} />
               <Route path="profile" element={<Navigate to="/settings/profile" replace />} />
-              <Route path="roles" element={<Navigate to="/data/files" replace />} />
-              <Route path="inbox" element={<Navigate to="/data/files" replace />} />
+              <Route path="roles" element={<Navigate to="/" replace />} />
+              <Route path="inbox" element={<Navigate to="/" replace />} />
               <Route path="settings" element={<Navigate to="/settings/profile" replace />} />
               <Route path="sync" element={<Navigate to="/sync-backup" replace />} />
             </Route>
@@ -432,8 +450,9 @@ function App() {
             <Route path="/skills/:bundleKey" element={<DataSkillsPage />} />
 
             <Route path="/imports" element={<Navigate to={importsHomePath} replace />} />
-            <Route path="/imports/claude" element={localMode ? <ClaudeMigrationPage localMode={localMode} officialExportPath="/imports/claude-export" /> : <Navigate to="/imports/claude-export" replace />} />
-            <Route path="/imports/codex" element={localMode ? <ClaudeMigrationPage localMode={localMode} platform="codex" displayName="Codex CLI" /> : <Navigate to="/imports/claude-export" replace />} />
+            <Route path="/imports/local-apps" element={localMode ? <ClaudeMigrationPage localMode={localMode} officialExportPath="/imports/claude-export" /> : <Navigate to="/" replace />} />
+            <Route path="/imports/claude" element={<Navigate to={localMode ? "/imports/local-apps?platform=claude" : "/"} replace />} />
+            <Route path="/imports/codex" element={<Navigate to={localMode ? "/imports/local-apps?platform=codex" : "/"} replace />} />
             <Route path="/imports/claude-export" element={<ClaudeImportPage localMode={localMode} />} />
 
             <Route path="/login" element={<Navigate to="/" replace />} />

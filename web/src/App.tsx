@@ -133,6 +133,7 @@ function App() {
   const [shellStats, setShellStats] = useState<DashboardStats>(emptyStats)
   const [shellBilling, setShellBilling] = useState<BillingStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const { tx } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
@@ -299,6 +300,10 @@ function App() {
     document.title = pageTitle === 'neuDrive' ? 'neuDrive' : `${pageTitle} — neuDrive`
   }, [location.pathname, user])
 
+  useEffect(() => {
+    setUserMenuOpen(false)
+  }, [location.pathname])
+
   const routeFallback = (
     <div className="loading-screen">
       <div className="loading-spinner" />
@@ -414,11 +419,6 @@ function App() {
             <span>{tx('概览', 'Home')}</span>
           </NavLink>
 
-          <NavLink to="/settings/profile" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">◎</span>
-            <span>{tx('个人资料', 'Profile')}</span>
-          </NavLink>
-
           <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <span className="nav-icon">⌘</span>
             <span>{tx('开发者访问', 'Developer Access')}</span>
@@ -461,17 +461,37 @@ function App() {
         <div className="sidebar-footer">
           {showUpgrade && <NavLink to="/plan" className="sidebar-upgrade">{tx('升级到 Pro', 'Upgrade to Pro')}</NavLink>}
           <LanguageToggle compact />
-          <div className="sidebar-footer-row">
-            <div className="user-info">
-              <span className="user-name">{user.name || user.slug || tx('用户', 'User')}</span>
-            </div>
-            <button className="btn-text" onClick={handleLogout}>{tx('退出', 'Sign out')}</button>
+          <div className="sidebar-user-menu-wrap">
+            <button
+              className="sidebar-user-button"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              onClick={() => setUserMenuOpen((open) => !open)}
+            >
+              <span className="sidebar-user-avatar">{(user.name || user.slug || 'U').slice(0, 1).toUpperCase()}</span>
+              <span className="user-info">
+                <span className="user-name">{user.name || user.slug || tx('用户', 'User')}</span>
+                <span className="user-menu-hint">{tx('账户菜单', 'Account menu')}</span>
+              </span>
+              <span className="user-menu-chevron">⌄</span>
+            </button>
+            {userMenuOpen && (
+              <div className="sidebar-user-menu" role="menu">
+                <NavLink to="/settings/profile" role="menuitem" onClick={() => setUserMenuOpen(false)}>
+                  {tx('个人资料', 'Profile')}
+                </NavLink>
+                <button type="button" role="menuitem" onClick={() => { void handleLogout() }}>
+                  {tx('退出', 'Sign out')}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </aside>
 
       <main className="main-content">
-        <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}>
+        <RouteErrorBoundary key={location.pathname} fallback={routeErrorFallback}>
         <Suspense fallback={routeFallback}>
           <Routes>
             <Route path="/" element={<DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} billingEnabled={billingEnabled} />} />

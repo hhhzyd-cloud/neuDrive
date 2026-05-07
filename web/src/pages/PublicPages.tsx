@@ -1,11 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, type AuthProvider } from '../api'
 import LanguageToggle from '../components/LanguageToggle'
 import { useI18n } from '../i18n'
 
 const HUB_URL = 'https://www.neudrive.ai'
 const MCP_URL = `${HUB_URL}/mcp`
+const DEFAULT_SEO_DESCRIPTION = 'neuDrive lets Claude, ChatGPT, Cursor, and other AI tools share one memory, file, skill, and vault layer.'
 
 type LocalizedText = {
   zh: string
@@ -636,10 +637,25 @@ function tr(tx: (zh: string, en: string) => string, text: LocalizedText) {
   return tx(text.zh, text.en)
 }
 
-function useDocumentTitle(title: string) {
+function setMeta(selector: string, attr: string, value: string) {
+  const element = document.querySelector(selector)
+  if (element) element.setAttribute(attr, value)
+}
+
+function useDocumentTitle(title: string, description = DEFAULT_SEO_DESCRIPTION, robots = 'index, follow') {
+  const location = useLocation()
   useEffect(() => {
     document.title = title
-  }, [title])
+    const url = `${HUB_URL}${location.pathname === '/' ? '/' : location.pathname}`
+    setMeta('meta[name="description"]', 'content', description)
+    setMeta('meta[name="robots"]', 'content', robots)
+    setMeta('link[rel="canonical"]', 'href', url)
+    setMeta('meta[property="og:title"]', 'content', title)
+    setMeta('meta[property="og:description"]', 'content', description)
+    setMeta('meta[property="og:url"]', 'content', url)
+    setMeta('meta[name="twitter:title"]', 'content', title)
+    setMeta('meta[name="twitter:description"]', 'content', description)
+  }, [description, location.pathname, robots, title])
 }
 
 function CopySnippet({ label, value, language = 'text' }: { label: string; value: string; language?: string }) {
@@ -681,7 +697,7 @@ function CopySnippet({ label, value, language = 'text' }: { label: string; value
   )
 }
 
-function PublicShell({ children }: { children: ReactNode }) {
+export function PublicShell({ children }: { children: ReactNode }) {
   const { tx } = useI18n()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const closeMobileMenu = () => setMobileMenuOpen(false)
@@ -784,7 +800,10 @@ function PublicFooter() {
 
 export function MarketingHomePage() {
   const { tx, isZh } = useI18n()
-  useDocumentTitle(tx('别让 AI 工具每次重新认识你 — neuDrive', 'Your AI tools should not have to meet you again every time — neuDrive'))
+  useDocumentTitle(
+    tx('别让 AI 工具每次重新认识你 — neuDrive', 'Your AI tools should not have to meet you again every time — neuDrive'),
+    tx('neuDrive 让 Claude、ChatGPT、Cursor 等 AI 工具共用同一份记忆、文件、技能和私密数据层。', DEFAULT_SEO_DESCRIPTION),
+  )
   const [activeKey, setActiveKey] = useState('claude')
   const [activeHeroPanel, setActiveHeroPanel] = useState<'memory' | 'files' | 'skills'>('memory')
   const activeIntegration = getIntegration(activeKey)
@@ -1183,7 +1202,10 @@ function PricingSection() {
 
 export function PricingPage() {
   const { tx } = useI18n()
-  useDocumentTitle(tx('价格 — neuDrive', 'Pricing — neuDrive'))
+  useDocumentTitle(
+    tx('价格 — neuDrive', 'Pricing — neuDrive'),
+    tx('比较 neuDrive Free 和 Pro 方案，了解存储空间、同步、备份和 AI 工具连接能力。', 'Compare neuDrive Free and Pro plans for storage, sync, backup, and AI tool connections.'),
+  )
   const comparisonRows = [
     [tx('存储空间', 'Storage'), '10 MiB', '1 GiB', '1 GiB'],
     [tx('AI 工具连接', 'AI connections'), tx('不限连接', 'Unlimited'), tx('不限连接', 'Unlimited'), tx('不限连接', 'Unlimited')],
@@ -1329,7 +1351,10 @@ export function PricingPage() {
 
 export function IntegrationsPage() {
   const { tx } = useI18n()
-  useDocumentTitle(tx('集成 — neuDrive', 'Integrations — neuDrive'))
+  useDocumentTitle(
+    tx('集成 — neuDrive', 'Integrations — neuDrive'),
+    tx('连接 Claude、ChatGPT、Cursor、Windsurf、命令行 Agent、浏览器扩展、MCP 和 REST API。', 'Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, browser extensions, MCP, and REST API.'),
+  )
   return (
     <PublicShell>
       <main className="public-simple">
@@ -1370,7 +1395,10 @@ export function IntegrationDetailPage() {
   const { platform } = useParams()
   const { tx } = useI18n()
   const item = getIntegration(platform)
-  useDocumentTitle(tx(`${item.shortName} 集成 — neuDrive`, `${item.shortName} Integration — neuDrive`))
+  useDocumentTitle(
+    tx(`${item.shortName} 集成 — neuDrive`, `${item.shortName} Integration — neuDrive`),
+    tx(`了解如何把 ${item.shortName} 连接到 neuDrive，共用记忆、文件和技能。`, `Learn how to connect ${item.shortName} to neuDrive so it can use shared memory, files, and skills.`),
+  )
   const codeSnippets = item.steps.flatMap((step) => step.codes || [])
   const previewCode = codeSnippets[0]
   return (
@@ -1453,7 +1481,10 @@ export function GuidePage() {
   const { platform } = useParams()
   const { tx } = useI18n()
   const guide = getIntegration(platform)
-  useDocumentTitle(tx(`${guide.shortName} 接入指南 — neuDrive`, `${guide.shortName} Setup Guide — neuDrive`))
+  useDocumentTitle(
+    tx(`${guide.shortName} 接入指南 — neuDrive`, `${guide.shortName} Setup Guide — neuDrive`),
+    tx(`${guide.shortName} 接入 neuDrive 的设置步骤、可复制内容、授权流程和测试问题。`, `Follow the neuDrive setup guide for ${guide.shortName}, including copyable URLs, authorization steps, and a test prompt.`),
+  )
   return (
     <PublicShell>
       <main className="public-simple guide-page">
@@ -1523,7 +1554,10 @@ export function GuidePage() {
 
 export function DocsLandingPage() {
   const { tx } = useI18n()
-  useDocumentTitle(tx('文档 — neuDrive', 'Docs — neuDrive'))
+  useDocumentTitle(
+    tx('文档 — neuDrive', 'Docs — neuDrive'),
+    tx('neuDrive 文档包含 Claude、ChatGPT、代码编辑器、CLI、浏览器扩展和自定义 MCP 客户端接入指南。', 'Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, browser extensions, and custom MCP clients.'),
+  )
   const docsGroups = [
     {
       title: tx('快速开始', 'Quick start'),
@@ -1646,7 +1680,10 @@ const legalContent = {
 export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
   const { tx } = useI18n()
   const page = legalContent[kind]
-  useDocumentTitle(kind === 'privacy' ? tx('隐私 — neuDrive', 'Privacy — neuDrive') : tx('条款 — neuDrive', 'Terms — neuDrive'))
+  useDocumentTitle(
+    kind === 'privacy' ? tx('隐私 — neuDrive', 'Privacy — neuDrive') : tx('条款 — neuDrive', 'Terms — neuDrive'),
+    tr(tx, page.intro),
+  )
   return (
     <PublicShell>
       <main className="public-simple legal-page">
@@ -1670,7 +1707,7 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
 
 export function SignupPage() {
   const { tx } = useI18n()
-  useDocumentTitle(tx('注册 — neuDrive', 'Sign up — neuDrive'))
+  useDocumentTitle(tx('注册 — neuDrive', 'Sign up — neuDrive'), DEFAULT_SEO_DESCRIPTION, 'noindex, nofollow')
   const navigate = useNavigate()
   const [providers, setProviders] = useState<AuthProvider[]>([])
   const [error, setError] = useState('')

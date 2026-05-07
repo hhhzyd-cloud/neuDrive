@@ -31,7 +31,7 @@ func TestImportPlatformClaudeDryRunPreview(t *testing.T) {
 		"conversations:",
 		"Sensitive findings: 1",
 		"Vault candidates: 1",
-		"Next command: neudrive import claude",
+		"Next command: neu import claude",
 	} {
 		if !strings.Contains(stdout, needle) {
 			t.Fatalf("expected %q in stdout=%q stderr=%q", needle, stdout, stderr)
@@ -64,7 +64,7 @@ func TestImportPlatformCodexDryRunPreviewHandlesLargeSessionIndex(t *testing.T) 
 		"Codex CLI migration preview",
 		"conversations:",
 		"bundles:",
-		"Next command: neudrive import codex",
+		"Next command: neu import codex",
 	} {
 		if !strings.Contains(stdout, needle) {
 			t.Fatalf("expected %q in stdout=%q stderr=%q", needle, stdout, stderr)

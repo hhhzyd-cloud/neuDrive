@@ -115,7 +115,7 @@ func TestPreviewImportClaudeIncludesMigrationCategories(t *testing.T) {
 	if len(preview.VaultCandidates) == 0 {
 		t.Fatal("expected preview vault candidates")
 	}
-	if preview.NextCommand != "neudrive import claude" {
+	if preview.NextCommand != "neu import claude" {
 		t.Fatalf("unexpected next command: %q", preview.NextCommand)
 	}
 }

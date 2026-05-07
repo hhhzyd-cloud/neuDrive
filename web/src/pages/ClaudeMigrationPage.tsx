@@ -144,6 +144,16 @@ function categoryLabel(name: string, tx: (zh: string, en: string) => string) {
   }
 }
 
+function displayImportCommand(command: string | undefined, platform: string) {
+  const trimmed = (command || "").trim();
+  if (!trimmed) return `neu import ${platform}`;
+  const legacyPlatformMatch = trimmed.match(/^neudrive\s+import\s+platform\s+([a-z0-9-]+)(?:\s+--mode\s+\S+)?$/i);
+  if (legacyPlatformMatch?.[1]) return `neu import ${legacyPlatformMatch[1]}`;
+  return trimmed
+    .replace(/^neudrive\s+/, "neu ")
+    .replace(/\s+--mode\s+\S+/g, "");
+}
+
 export default function ClaudeMigrationPage({
   localMode = false,
   initialPlatform = "claude",
@@ -450,8 +460,7 @@ export default function ClaudeMigrationPage({
               <div className="local-import-command">
                 <div className="local-import-command-label">{tx("也可使用终端命令", "Terminal command")}</div>
                 <pre className="migration-command">
-                  {preview?.next_command ||
-                    `neu import ${platform} --dry-run`}
+                  {displayImportCommand(preview?.next_command, platform)}
                 </pre>
               </div>
             </div>

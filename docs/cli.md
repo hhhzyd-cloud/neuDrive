@@ -4,7 +4,7 @@ English | [简体中文](cli.zh-CN.md)
 
 This is the detailed CLI guide linked from the README. For platform-by-platform connection setup, see the [Setup Guide](setup.md).
 
-Examples below use `neu`; the `neudrive` alias remains supported.
+Examples below use `neu`.
 
 ## Install
 

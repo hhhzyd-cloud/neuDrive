@@ -413,7 +413,7 @@ func runHubImport(args []string) int {
 		if len(args) > 1 && !strings.HasPrefix(strings.TrimSpace(args[1]), "-") {
 			target = strings.TrimSpace(args[1])
 		}
-		fmt.Fprintf(os.Stderr, "`import platform` has been removed; use `%s` instead\n", renderCLIText("neudrive import "+target))
+		fmt.Fprintf(os.Stderr, "`import platform` has been removed; use `%s` instead\n", renderCLIText("neu import "+target))
 		return 2
 	default:
 		if _, err := platforms.Resolve(args[0]); err == nil {

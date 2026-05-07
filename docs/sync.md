@@ -30,7 +30,7 @@ Bundle Sync 支持两种文件格式：
 
 ## CLI 配置与登录
 
-`neu` 现在支持统一的本地 / hosted target 配置，兼容别名 `neudrive` 仍然可用。默认 target 是 `local`；登录一次 hosted profile 后，根命令和 `sync` 的常用子命令都会默认跟随当前 target，不需要每次重复传 `--token` 和 `--api-base`。
+`neu` 现在支持统一的本地 / hosted target 配置。默认 target 是 `local`；登录一次 hosted profile 后，根命令和 `sync` 的常用子命令都会默认跟随当前 target，不需要每次重复传 `--token` 和 `--api-base`。
 
 默认配置文件位置：
 

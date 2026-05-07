@@ -566,8 +566,8 @@ func runLegacyImport(args []string) int {
 		fmt.Fprintf(
 			os.Stderr,
 			"--mode has been removed; use `%s` for the default import or `%s` to include the raw snapshot\n",
-			renderCLIText("neudrive import "+platform),
-			renderCLIText("neudrive import "+platform+" --raw"),
+			renderCLIText("neu import "+platform),
+			renderCLIText("neu import "+platform+" --raw"),
 		)
 		return 2
 	}

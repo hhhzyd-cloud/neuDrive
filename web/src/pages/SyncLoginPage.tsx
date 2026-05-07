@@ -134,8 +134,8 @@ export default function SyncLoginPage({ systemSettingsEnabled = false }: SyncLog
 
       if (!callbackRes.ok) {
         throw new Error(tx(
-          'Sync Token 已生成，但回填本地 CLI 失败。请确认终端还在等待登录，或改用手工 `neudrive login --token ...`。',
-          'The Sync token was created, but sending it back to the local CLI failed. Make sure the terminal is still waiting, or use `neudrive login --token ...` manually.',
+          'Sync Token 已生成，但回填本地 CLI 失败。请确认终端还在等待登录，或改用手工 `neu login --token ...`。',
+          'The Sync token was created, but sending it back to the local CLI failed. Make sure the terminal is still waiting, or use `neu login --token ...` manually.',
         ))
       }
 
@@ -218,7 +218,7 @@ export default function SyncLoginPage({ systemSettingsEnabled = false }: SyncLog
             <div className="data-record-meta">{tx('过期时间：', 'Expires at: ')}{formatDateTime(syncToken.expires_at, locale)}</div>
             <div className="data-record-secondary">
               {tx('如果终端还在等待，也可以手工执行：', 'If the terminal is still waiting, you can also run:')}
-              <code> neudrive login --api-base {window.location.origin} --token &lt;PASTE_TOKEN&gt;</code>
+              <code> neu login --api-base {window.location.origin} --token &lt;PASTE_TOKEN&gt;</code>
             </div>
           </div>
         )}

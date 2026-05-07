@@ -286,9 +286,9 @@ func suggestedImportCommand(platform string, mode ImportMode) string {
 	}
 	switch mode {
 	case ImportModeAll:
-		return fmt.Sprintf("neudrive import %s --raw", name)
+		return fmt.Sprintf("neu import %s --raw", name)
 	default:
-		return fmt.Sprintf("neudrive import %s", name)
+		return fmt.Sprintf("neu import %s", name)
 	}
 }
 

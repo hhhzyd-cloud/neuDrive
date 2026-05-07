@@ -101,7 +101,7 @@ export default function CommandLineToolsPage() {
         <div className="cli-command-list">
         <CommandBlock
           title={tx('安装 neu', 'Install neu')}
-          description={tx('从当前开源仓库安装 CLI。安装后默认使用 neu，兼容别名 neudrive 仍然可用。', 'Install the CLI from the open-source repository. After install, use neu; the neudrive compatibility alias still works.')}
+          description={tx('从当前开源仓库安装 CLI。安装后直接使用 neu。', 'Install the CLI from the open-source repository. After install, use neu directly.')}
           command={installCommand}
           copyKey="install"
           copied={copied}

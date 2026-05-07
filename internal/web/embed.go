@@ -2,11 +2,14 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
+	"html"
 	"io/fs"
 	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -37,7 +40,13 @@ func Handler() http.Handler {
 			}
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write(indexFile)
+			w.Write(renderIndexHTML(indexFile, seoForPath(r.URL.Path)))
+			return
+		}
+		if path == "index.html" {
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write(renderIndexHTML(f, seoForPath(r.URL.Path)))
 			return
 		}
 		_ = f
@@ -47,6 +56,152 @@ func Handler() http.Handler {
 		// (it sets correct Content-Type, caching headers, etc.)
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+type pageSEO struct {
+	Title       string
+	Description string
+	URL         string
+	Robots      string
+}
+
+const (
+	siteURL            = "https://www.neudrive.ai"
+	defaultTitle       = "Your AI tools should not have to meet you again every time — neuDrive"
+	defaultDescription = "neuDrive lets Claude, ChatGPT, Cursor, and other AI tools share one memory, file, skill, and vault layer."
+)
+
+var (
+	titleTagRe             = regexp.MustCompile(`(?is)<title>.*?</title>`)
+	descriptionMetaRe      = regexp.MustCompile(`(?is)<meta\s+name="description"\s+content="[^"]*"\s*/?>`)
+	robotsMetaRe           = regexp.MustCompile(`(?is)<meta\s+name="robots"\s+content="[^"]*"\s*/?>`)
+	canonicalLinkRe        = regexp.MustCompile(`(?is)<link\s+rel="canonical"\s+href="[^"]*"\s*/?>`)
+	ogTitleMetaRe          = regexp.MustCompile(`(?is)<meta\s+property="og:title"\s+content="[^"]*"\s*/?>`)
+	ogDescriptionMetaRe    = regexp.MustCompile(`(?is)<meta\s+property="og:description"\s+content="[^"]*"\s*/?>`)
+	ogURLMetaRe            = regexp.MustCompile(`(?is)<meta\s+property="og:url"\s+content="[^"]*"\s*/?>`)
+	twitterTitleMetaRe     = regexp.MustCompile(`(?is)<meta\s+name="twitter:title"\s+content="[^"]*"\s*/?>`)
+	twitterDescriptionRe   = regexp.MustCompile(`(?is)<meta\s+name="twitter:description"\s+content="[^"]*"\s*/?>`)
+	structuredDataScriptRe = regexp.MustCompile(`(?is)<script\s+type="application/ld\+json"\s+id="structured-data">.*?</script>`)
+)
+
+func seoForPath(rawPath string) pageSEO {
+	cleanPath := "/" + strings.Trim(strings.TrimSpace(rawPath), "/")
+	if cleanPath == "//" {
+		cleanPath = "/"
+	}
+	seo := pageSEO{
+		Title:       defaultTitle,
+		Description: defaultDescription,
+		URL:         siteURL + cleanPath,
+		Robots:      "index, follow",
+	}
+	switch {
+	case cleanPath == "/":
+		seo.URL = siteURL + "/"
+	case cleanPath == "/pricing":
+		seo.Title = "Pricing — neuDrive"
+		seo.Description = "Compare neuDrive Free and Pro plans for storage, sync, backup, and AI tool connections."
+	case cleanPath == "/integrations":
+		seo.Title = "Integrations — neuDrive"
+		seo.Description = "Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, browser extensions, MCP, and REST API."
+	case cleanPath == "/docs":
+		seo.Title = "Docs — neuDrive"
+		seo.Description = "Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, browser extensions, and custom MCP clients."
+	case strings.HasPrefix(cleanPath, "/integrations/"):
+		name := integrationName(strings.TrimPrefix(cleanPath, "/integrations/"))
+		seo.Title = name + " Integration — neuDrive"
+		seo.Description = "Learn how to connect " + name + " to neuDrive so it can use shared memory, files, and skills."
+	case strings.HasPrefix(cleanPath, "/guides/"):
+		name := integrationName(strings.TrimPrefix(cleanPath, "/guides/"))
+		seo.Title = name + " Setup Guide — neuDrive"
+		seo.Description = "Follow the neuDrive setup guide for " + name + ", including copyable URLs, authorization steps, and a test prompt."
+	case cleanPath == "/privacy":
+		seo.Title = "Privacy — neuDrive"
+		seo.Description = "How neuDrive handles AI memory, files, credentials, connections, exports, and deletion."
+	case cleanPath == "/terms":
+		seo.Title = "Terms — neuDrive"
+		seo.Description = "Terms for using neuDrive and connecting AI tools to your memory, files, and skills."
+	case cleanPath == "/login" || cleanPath == "/signup" || isPrivateAppPath(cleanPath):
+		seo.Title = "neuDrive"
+		seo.Description = defaultDescription
+		seo.Robots = "noindex, nofollow"
+	}
+	return seo
+}
+
+func integrationName(key string) string {
+	switch strings.ToLower(strings.Trim(key, "/")) {
+	case "claude", "cloud":
+		return "Claude"
+	case "chatgpt", "openai", "apps":
+		return "ChatGPT Apps"
+	case "editors", "cursor", "windsurf":
+		return "Cursor and Windsurf"
+	case "cli", "codex", "claude-code", "gemini":
+		return "CLI Agents"
+	case "browser":
+		return "Browser Extension"
+	case "api", "mcp", "sdk":
+		return "MCP and REST API"
+	default:
+		return "AI Tool"
+	}
+}
+
+func isPrivateAppPath(path string) bool {
+	privatePrefixes := []string{
+		"/api/", "/oauth/", "/settings/", "/data/", "/imports/", "/sync/", "/billing/",
+		"/onboarding", "/setup/", "/cli", "/mcp", "/gpt/", "/stripe/",
+	}
+	for _, prefix := range privatePrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return path == "/plan"
+}
+
+func renderIndexHTML(indexFile []byte, seo pageSEO) []byte {
+	htmlText := string(indexFile)
+	title := html.EscapeString(seo.Title)
+	description := html.EscapeString(seo.Description)
+	urlValue := html.EscapeString(seo.URL)
+	robots := html.EscapeString(seo.Robots)
+
+	htmlText = titleTagRe.ReplaceAllString(htmlText, "<title>"+title+"</title>")
+	htmlText = descriptionMetaRe.ReplaceAllString(htmlText, `<meta name="description" content="`+description+`" />`)
+	htmlText = robotsMetaRe.ReplaceAllString(htmlText, `<meta name="robots" content="`+robots+`" />`)
+	htmlText = canonicalLinkRe.ReplaceAllString(htmlText, `<link rel="canonical" href="`+urlValue+`" />`)
+	htmlText = ogTitleMetaRe.ReplaceAllString(htmlText, `<meta property="og:title" content="`+title+`" />`)
+	htmlText = ogDescriptionMetaRe.ReplaceAllString(htmlText, `<meta property="og:description" content="`+description+`" />`)
+	htmlText = ogURLMetaRe.ReplaceAllString(htmlText, `<meta property="og:url" content="`+urlValue+`" />`)
+	htmlText = twitterTitleMetaRe.ReplaceAllString(htmlText, `<meta name="twitter:title" content="`+title+`" />`)
+	htmlText = twitterDescriptionRe.ReplaceAllString(htmlText, `<meta name="twitter:description" content="`+description+`" />`)
+	htmlText = structuredDataScriptRe.ReplaceAllString(htmlText, structuredDataScript(seo))
+	return []byte(htmlText)
+}
+
+func structuredDataScript(seo pageSEO) string {
+	payload := map[string]interface{}{
+		"@context":            "https://schema.org",
+		"@type":               "SoftwareApplication",
+		"name":                "neuDrive",
+		"applicationCategory": "ProductivityApplication",
+		"operatingSystem":     "Web",
+		"url":                 seo.URL,
+		"description":         seo.Description,
+		"offers": map[string]string{
+			"@type":         "Offer",
+			"price":         "60",
+			"priceCurrency": "USD",
+			"availability":  "https://schema.org/InStock",
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		body = []byte(`{"@context":"https://schema.org","@type":"SoftwareApplication","name":"neuDrive"}`)
+	}
+	return `<script type="application/ld+json" id="structured-data">` + string(body) + `</script>`
 }
 
 func setFrontendCacheHeaders(w http.ResponseWriter, path string) {

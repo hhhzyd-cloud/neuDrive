@@ -9,7 +9,6 @@ const freeBillingStatus = {
   limit_bytes: 10 * 1024 * 1024,
   usage_measured_at: '2026-04-19T12:00:00Z',
   account_read_only: false,
-  promo: undefined,
   plans: [
     { code: 'free', name: 'Free', currency: 'usd', price_cents: 0, interval: 'month', storage_limit_bytes: 10 * 1024 * 1024 },
     { code: 'pro_monthly', name: 'Pro Monthly', currency: 'usd', price_cents: 1000, interval: 'month', storage_limit_bytes: 1024 * 1024 * 1024 },
@@ -39,31 +38,7 @@ const yearlyBillingStatus = {
   can_manage_portal: true,
 }
 
-const promoActiveBillingStatus = {
-  ...freeBillingStatus,
-  current_plan: 'pro_monthly',
-  access_source: 'promo_code',
-  limit_bytes: 1024 * 1024 * 1024,
-  can_checkout: false,
-  promo: {
-    state: 'active',
-    name: 'Launch Promo',
-    starts_at: '2026-04-19T12:00:00Z',
-    ends_at: '2026-07-19T12:00:00Z',
-  },
-}
-
-const promoScheduledBillingStatus = {
-  ...monthlyBillingStatus,
-  promo: {
-    state: 'scheduled',
-    name: 'Launch Promo',
-    starts_at: '2026-05-19T12:00:00Z',
-    ends_at: '2026-08-19T12:00:00Z',
-  },
-}
-
-async function enableBillingUI(page: Page, status: typeof freeBillingStatus) {
+async function enableBillingUI(page: Page, status: Record<string, unknown>) {
   await page.route('**/api/config', async (route) => {
     await route.fulfill({
       status: 200,
@@ -89,11 +64,24 @@ async function enableBillingUI(page: Page, status: typeof freeBillingStatus) {
 
 test.describe('Billing UI', () => {
   test('billing stays hidden when feature flag is off', async ({ page, request }) => {
+    await page.route('**/api/config', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            billing_enabled: false,
+            system_settings_enabled: false,
+          },
+        }),
+      })
+    })
     await setupUser(page, request)
 
-    await expect(page.getByRole('link', { name: 'Billing' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Plan & Billing' })).toHaveCount(0)
     await page.goto('/billing')
-    await expect(page).toHaveURL(/\/$/)
+    await expect(page).toHaveURL(/\/settings\/profile$/)
   })
 
   test('free users can start monthly checkout', async ({ page, request }) => {
@@ -116,15 +104,17 @@ test.describe('Billing UI', () => {
 
     await setupUser(page, request)
 
-    await expect(page.getByRole('link', { name: 'Billing' })).toBeVisible()
-    await page.getByRole('link', { name: 'Billing' }).click()
-    await expect(page).toHaveURL(/\/billing$/)
-    await expect(page.getByText('Storage: 10 MiB')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Redeem code' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Subscribe Monthly' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Subscribe Yearly' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Plan & Billing' })).toBeVisible()
+    await page.getByRole('link', { name: 'Plan & Billing' }).click()
+    await expect(page).toHaveURL(/\/settings\/billing$/)
+    await expect(page.getByRole('heading', { name: 'Free', level: 3 })).toBeVisible()
+    await expect(page.getByText('Promo codes in Stripe Checkout')).toBeVisible()
+    await expect(page.getByPlaceholder('Enter promo code')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Promo code' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Choose monthly' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Choose yearly' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Subscribe Monthly' }).click()
+    await page.getByRole('button', { name: 'Choose monthly' }).click()
     await expect(page).toHaveURL(/\/checkout\/monthly$/)
   })
 
@@ -149,7 +139,7 @@ test.describe('Billing UI', () => {
     await setupUser(page, request)
     await page.goto('/billing')
 
-    await page.getByRole('button', { name: 'Subscribe Yearly' }).click()
+    await page.getByRole('button', { name: 'Choose yearly' }).click()
     await expect(page).toHaveURL(/\/checkout\/yearly$/)
   })
 
@@ -173,9 +163,9 @@ test.describe('Billing UI', () => {
     await setupUser(page, request)
     await page.goto('/billing')
 
-    await expect(page.getByRole('heading', { name: 'Pro Monthly' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Manage billing' })).toBeVisible()
-    await page.getByRole('button', { name: 'Manage billing' }).click()
+    await expect(page.getByRole('heading', { name: 'Pro Monthly', level: 3 })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Manage plan' }).first()).toBeVisible()
+    await page.getByRole('button', { name: 'Manage plan' }).first().click()
     await expect(page).toHaveURL(/\/portal\/mock$/)
   })
 
@@ -184,8 +174,8 @@ test.describe('Billing UI', () => {
     await setupUser(page, request)
     await page.goto('/billing')
 
-    await expect(page.getByRole('heading', { name: 'Pro Yearly' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Manage billing' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Pro Yearly', level: 3 })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Manage plan' }).first()).toBeVisible()
   })
 
   test('billing success refreshes and shows the current yearly plan', async ({ page, request }) => {
@@ -196,78 +186,6 @@ test.describe('Billing UI', () => {
     await expect(page.getByText('Upgrade confirmed')).toBeVisible()
     await expect(page.getByText('Pro Yearly')).toBeVisible()
     await expect(page.getByText('1.0 GiB')).toBeVisible()
-  })
-
-  test('promo code redemption refreshes billing status', async ({ page, request }) => {
-    let currentStatus = freeBillingStatus
-    await page.route('**/api/config', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ok: true,
-          data: {
-            billing_enabled: true,
-            system_settings_enabled: false,
-          },
-        }),
-      })
-    })
-    await page.route('**/api/billing/status', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(currentStatus),
-      })
-    })
-    await page.route('**/api/billing/redeem-code', async (route) => {
-      await expect(route.request().postDataJSON()).toEqual({ code: 'PROMO2026' })
-      currentStatus = promoActiveBillingStatus
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ ok: true, status: promoActiveBillingStatus }),
-      })
-    })
-
-    await setupUser(page, request)
-    await page.goto('/billing')
-    await page.getByPlaceholder('Enter promo code').fill('PROMO2026')
-    await page.getByRole('button', { name: 'Redeem' }).click()
-
-    await expect(page.getByText('Promo code redeemed successfully.')).toBeVisible()
-    await expect(page.getByText('Pro (Promo code)')).toBeVisible()
-    await expect(page.getByText('Promo access: Launch Promo is active until')).toBeVisible()
-  })
-
-  test('scheduled promo states are explained on billing', async ({ page, request }) => {
-    await enableBillingUI(page, promoScheduledBillingStatus)
-    await setupUser(page, request)
-    await page.goto('/billing')
-
-    await expect(page.getByText('Promo access: Launch Promo is scheduled.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Redeem' })).toBeDisabled()
-  })
-
-  test('promo redemption errors are shown inline', async ({ page, request }) => {
-    await enableBillingUI(page, freeBillingStatus)
-    await page.route('**/api/billing/redeem-code', async (route) => {
-      await route.fulfill({
-        status: 403,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          code: 'code_expired',
-          message: 'promo code has expired',
-        }),
-      })
-    })
-
-    await setupUser(page, request)
-    await page.goto('/billing')
-    await page.getByPlaceholder('Enter promo code').fill('OLD-CODE')
-    await page.getByRole('button', { name: 'Redeem' }).click()
-
-    await expect(page.getByText('promo code has expired')).toBeVisible()
   })
 
   test('quota errors redirect the app into billing', async ({ page, request }) => {
@@ -293,11 +211,10 @@ test.describe('Billing UI', () => {
 
     await setupUser(page, request)
     await page.goto('/data/memory')
-    await page.getByRole('button', { name: 'New memory' }).click()
-    await page.getByLabel('File name').fill('overflow-note.md')
-    await page.getByRole('button', { name: 'Create' }).click()
+    await page.locator('.inline-create-form input').fill('overflow-note.md')
+    await page.getByRole('button', { name: 'Create memory' }).click()
 
-    await expect(page).toHaveURL(/\/billing\?reason=quota_exceeded/)
+    await expect(page).toHaveURL(/\/settings\/billing\?reason=quota_exceeded/)
     await expect(page.getByText('Your storage is full.')).toBeVisible()
   })
 })

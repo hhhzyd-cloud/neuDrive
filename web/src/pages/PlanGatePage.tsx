@@ -113,7 +113,7 @@ export default function PlanGatePage({ billingEnabled = false }: PlanGatePagePro
           <article className="plan-option-card">
             <h3>{tx('Pro 月付', 'Pro Monthly')}</h3>
             <div className="pricing-price">{tx('$10 / 月', '$10 / month')}</div>
-            <p>{tx('先按月验证工作流。', 'Validate the workflow month to month.')}</p>
+            <p>{tx('先按月验证工作流，可在 Stripe Checkout 输入优惠码。', 'Validate the workflow month to month. Promo codes can be entered in Stripe Checkout.')}</p>
             <button className="btn btn-outline btn-block" disabled={busy !== ''} onClick={() => { void startCheckout('pro_monthly') }}>
               {busy === 'pro_monthly' ? tx('跳转中...', 'Redirecting...') : tx('月付 Pro', 'Start monthly')}
             </button>

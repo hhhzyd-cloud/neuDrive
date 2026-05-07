@@ -12,6 +12,8 @@ English | [简体中文](README.zh-CN.md)
 
 neuDrive gives one person one hub. Claude, ChatGPT, Codex, Cursor, Gemini, Feishu, and other agents can share identity, memory, skills, secrets, and communication through that hub instead of rebuilding context on every platform.
 
+You can deploy neuDrive yourself and run your own hub. I also host a ready-to-use version at [https://www.neudrive.ai](https://www.neudrive.ai) if you want to try it right away. Use promotion code `VIVO50` for three free months of service; after that, you can keep subscribing, continue with the available hosted plan, or move to your own self-hosted deployment.
+
 ```bash
 neu browse
 ```

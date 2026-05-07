@@ -16,6 +16,8 @@
 
 neuDrive 给每个人一个 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、飞书、Kimi、智谱等 Agent 可以通过这个 Hub 共享身份、记忆、能力、秘密和通信，而不是在每个平台里重复建立上下文。
 
+你可以自己部署 neuDrive，运行属于自己的 Hub。我也提供了一个已经部署好的版本，可以直接在 [https://www.neudrive.ai](https://www.neudrive.ai) 体验。使用兑换码 `VIVO50` 可以获得三个月免费服务；三个月到期后，你可以选择继续续费、继续使用可用的托管方案，或者切换到自己部署的版本。
+
 **你的身份、偏好、秘密、技能跟着人走，不跟平台走。**
 
 为什么会用它：

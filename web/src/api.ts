@@ -153,6 +153,7 @@ export interface PublicConfig {
   local_mode?: boolean;
   system_settings_enabled?: boolean;
   git_mirror_execution_mode?: "local" | "hosted";
+  git_mirror_manual_sync_cooldown_seconds?: number;
 }
 
 export interface BillingPlan {
@@ -265,6 +266,8 @@ export interface LocalGitSyncInfo {
   last_commit_hash?: string;
   last_push_at?: string;
   last_push_error?: string;
+  remote_conflict?: boolean;
+  force_remote_overwrite?: boolean;
   commit_created?: boolean;
   push_attempted?: boolean;
   push_succeeded?: boolean;
@@ -1092,10 +1095,10 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
-  syncGitMirror: (): Promise<LocalGitSyncInfo> =>
+  syncGitMirror: (req: SyncGitMirrorRequest = {}): Promise<LocalGitSyncInfo> =>
     request<LocalGitSyncInfo>("/git-mirror/sync", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(req),
     }),
 
   testGitMirrorGitHubTokenGeneric: (
@@ -1133,6 +1136,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(req),
     }),
+
+  createDefaultGitMirrorGitHubAppBackupRepo:
+    (): Promise<GitMirrorDefaultBackupRepoResult> =>
+      request<GitMirrorDefaultBackupRepoResult>(
+        "/git-mirror/github-app/default-backup-repo",
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      ),
 };
 
 // ---------------------------------------------------------------------------
@@ -1406,6 +1419,8 @@ export interface GitMirrorSettings {
   last_commit_hash?: string;
   last_push_at?: string;
   last_push_error?: string;
+  remote_conflict?: boolean;
+  force_remote_overwrite?: boolean;
   github_token_configured: boolean;
   github_token_verified_at?: string;
   github_token_login?: string;
@@ -1437,8 +1452,17 @@ export interface UpdateGitMirrorRequest {
   clear_github_token?: boolean;
 }
 
+export interface SyncGitMirrorRequest {
+  force_remote_overwrite?: boolean;
+}
+
 export interface GitMirrorGitHubAppBrowserStartResult {
   authorization_url: string;
+}
+
+export interface GitMirrorDefaultBackupRepoResult {
+  settings: GitMirrorSettings;
+  repo: GitMirrorRepo;
 }
 
 export interface GitMirrorRepo {

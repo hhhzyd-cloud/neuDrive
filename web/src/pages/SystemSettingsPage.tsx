@@ -1,6 +1,13 @@
 import { useMemo, useState, useEffect } from 'react'
-import { api, type LocalConfigFile } from '../api'
+import {
+  api,
+  type GitMirrorGitHubTestResult,
+  type GitMirrorSettings,
+  type LocalConfigFile,
+  type UpdateGitMirrorRequest,
+} from '../api'
 import { useI18n } from '../i18n'
+import { formatDateTime } from './data/DataShared'
 
 type ConfigViewMode = 'settings' | 'raw'
 
@@ -200,7 +207,7 @@ function buildConfigFromDraft(baseRaw: string, draft: LocalSettingsDraft): { val
 }
 
 export default function SystemSettingsPage() {
-  const { tx } = useI18n()
+  const { locale, tx } = useI18n()
   const [configViewMode, setConfigViewMode] = useState<ConfigViewMode>('settings')
   const [localConfig, setLocalConfig] = useState<LocalConfigFile | null>(null)
   const [localConfigBusy, setLocalConfigBusy] = useState(false)
@@ -210,6 +217,22 @@ export default function SystemSettingsPage() {
   const [localConfigRaw, setLocalConfigRaw] = useState('')
   const [settingsDraft, setSettingsDraft] = useState<LocalSettingsDraft>(() => draftFromRaw(''))
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({})
+  const [gitMirror, setGitMirror] = useState<GitMirrorSettings | null>(null)
+  const [gitMirrorBusy, setGitMirrorBusy] = useState(false)
+  const [gitMirrorSaving, setGitMirrorSaving] = useState(false)
+  const [gitMirrorTesting, setGitMirrorTesting] = useState(false)
+  const [gitMirrorError, setGitMirrorError] = useState('')
+  const [gitMirrorMessage, setGitMirrorMessage] = useState('')
+  const [gitMirrorTokenInput, setGitMirrorTokenInput] = useState('')
+  const [gitMirrorTokenTest, setGitMirrorTokenTest] = useState<GitMirrorGitHubTestResult | null>(null)
+  const [gitMirrorDraft, setGitMirrorDraft] = useState<UpdateGitMirrorRequest>({
+    auto_commit_enabled: false,
+    auto_push_enabled: false,
+    auth_mode: 'local_credentials',
+    remote_name: 'origin',
+    remote_url: '',
+    remote_branch: 'main',
+  })
 
   const syncLocalConfig = (config: LocalConfigFile) => {
     setLocalConfig(config)
@@ -230,8 +253,36 @@ export default function SystemSettingsPage() {
     }
   }
 
+  const syncGitMirrorDraft = (settings: GitMirrorSettings) => {
+    setGitMirror(settings)
+    setGitMirrorDraft({
+      auto_commit_enabled: settings.auto_commit_enabled,
+      auto_push_enabled: settings.auto_push_enabled,
+      auth_mode: settings.auth_mode,
+      remote_name: 'origin',
+      remote_url: settings.remote_url || '',
+      remote_branch: 'main',
+    })
+    setGitMirrorTokenInput('')
+    setGitMirrorTokenTest(null)
+  }
+
+  const loadGitMirror = async () => {
+    setGitMirrorBusy(true)
+    setGitMirrorError('')
+    try {
+      const settings = await api.getLocalGitMirror()
+      syncGitMirrorDraft(settings)
+    } catch (err: any) {
+      setGitMirrorError(err.message || tx('加载 Git Mirror 配置失败', 'Failed to load Git Mirror settings'))
+    } finally {
+      setGitMirrorBusy(false)
+    }
+  }
+
   useEffect(() => {
     void loadLocalConfig()
+    void loadGitMirror()
   }, [])
 
   const localConfigRawValidationError = useMemo(() => {
@@ -258,6 +309,22 @@ export default function SystemSettingsPage() {
     setSettingsDraft((prev) => ({ ...prev, ...patch }))
     setLocalConfigMessage('')
     setLocalConfigError('')
+  }
+
+  const updateGitMirrorDraft = (patch: Partial<UpdateGitMirrorRequest>) => {
+    setGitMirrorDraft((prev) => {
+      const next = { ...prev, ...patch, remote_name: 'origin', remote_branch: 'main' }
+      if (!next.auto_commit_enabled) {
+        next.auto_push_enabled = false
+      }
+      if (next.auto_push_enabled) {
+        next.auto_commit_enabled = true
+      }
+      return next
+    })
+    setGitMirrorError('')
+    setGitMirrorMessage('')
+    setGitMirrorTokenTest(null)
   }
 
   const toggleSecretVisibility = (key: string) => {
@@ -312,6 +379,72 @@ export default function SystemSettingsPage() {
       setLocalConfigError(err.message || tx('保存系统设置失败', 'Failed to save system settings'))
     } finally {
       setLocalConfigSaving(false)
+    }
+  }
+
+  const handleGitMirrorTest = async () => {
+    setGitMirrorTesting(true)
+    setGitMirrorError('')
+    setGitMirrorMessage('')
+    try {
+      const result = await api.testGitMirrorGitHubToken({
+        remote_url: gitMirrorDraft.remote_url || '',
+        github_token: gitMirrorTokenInput.trim(),
+      })
+      setGitMirrorTokenTest(result)
+      if (result.normalized_remote_url) {
+        setGitMirrorDraft((prev) => ({ ...prev, remote_url: result.normalized_remote_url || prev.remote_url }))
+      }
+      if (result.ok) {
+        setGitMirrorMessage(result.message || tx('GitHub token 可用', 'GitHub token is valid'))
+      } else {
+        setGitMirrorError(result.message || tx('GitHub token 校验失败', 'GitHub token validation failed'))
+      }
+    } catch (err: any) {
+      setGitMirrorError(err.message || tx('GitHub token 测试失败', 'Failed to test GitHub token'))
+    } finally {
+      setGitMirrorTesting(false)
+    }
+  }
+
+  const handleGitMirrorSave = async () => {
+    setGitMirrorSaving(true)
+    setGitMirrorError('')
+    setGitMirrorMessage('')
+    try {
+      const saved = await api.updateLocalGitMirror({
+        ...gitMirrorDraft,
+        remote_name: 'origin',
+        remote_branch: 'main',
+        github_token: gitMirrorTokenInput.trim() || undefined,
+      })
+      syncGitMirrorDraft(saved)
+      setGitMirrorMessage(tx('Git Mirror 配置已保存', 'Git Mirror settings saved'))
+    } catch (err: any) {
+      setGitMirrorError(err.message || tx('保存 Git Mirror 配置失败', 'Failed to save Git Mirror settings'))
+    } finally {
+      setGitMirrorSaving(false)
+    }
+  }
+
+  const handleGitMirrorClearToken = async () => {
+    setGitMirrorSaving(true)
+    setGitMirrorError('')
+    setGitMirrorMessage('')
+    try {
+      const saved = await api.updateLocalGitMirror({
+        ...gitMirrorDraft,
+        auto_push_enabled: false,
+        remote_name: 'origin',
+        remote_branch: 'main',
+        clear_github_token: true,
+      })
+      syncGitMirrorDraft(saved)
+      setGitMirrorMessage(tx('已清除保存的 GitHub token', 'Saved GitHub token was cleared'))
+    } catch (err: any) {
+      setGitMirrorError(err.message || tx('清除 GitHub token 失败', 'Failed to clear GitHub token'))
+    } finally {
+      setGitMirrorSaving(false)
     }
   }
 
@@ -470,6 +603,181 @@ export default function SystemSettingsPage() {
         )}
         {localConfigError && <div className="alert alert-warn" style={{ marginTop: 16 }}>{localConfigError}</div>}
         {localConfigMessage && <div className="alert alert-ok" style={{ marginTop: 16 }}>{localConfigMessage}</div>}
+      </div>
+
+      <div className="materials-panel data-sync-card">
+        <div className="card-header">
+          <h3 className="card-title">{tx('Git Mirror Advanced', 'Git Mirror Advanced')}</h3>
+        </div>
+        <p className="data-record-secondary">
+          {tx('这里是本地部署的高级备份配置。普通 GitHub Backup 页面会固定使用 origin/main。', 'Advanced backup settings for local deployments. The main GitHub Backup page always uses origin/main.')}
+        </p>
+
+        {gitMirrorBusy && <div className="page-loading">{tx('加载中...', 'Loading...')}</div>}
+        {!gitMirrorBusy && gitMirror && (
+          <>
+            <div className="data-sync-status-grid" style={{ marginTop: 16 }}>
+              <div className="data-sync-status-card">
+                <div className="data-record-title">{tx('镜像目录', 'Mirror path')}</div>
+                <code>{gitMirror.path || tx('还没有初始化', 'Not initialized')}</code>
+              </div>
+              <div className="data-sync-status-card">
+                <div className="data-record-title">{tx('最近同步', 'Last sync')}</div>
+                <div className="data-record-secondary">
+                  {gitMirror.last_synced_at ? formatDateTime(gitMirror.last_synced_at, locale) : tx('还没有', 'Not yet')}
+                </div>
+              </div>
+              <div className="data-sync-status-card">
+                <div className="data-record-title">{tx('最近推送', 'Last push')}</div>
+                <div className="data-record-secondary">
+                  {gitMirror.last_push_at ? formatDateTime(gitMirror.last_push_at, locale) : tx('还没有', 'Not yet')}
+                </div>
+              </div>
+            </div>
+
+            <div className="data-sync-settings-shell">
+              <section className="data-sync-settings-section">
+                <h4 className="data-sync-section-title">{tx('同步行为', 'Sync behavior')}</h4>
+                <div className="data-sync-toggle-grid">
+                  <label className="data-sync-toggle-card">
+                    <div className="data-sync-toggle-copy">
+                      <div className="data-sync-toggle-title">{tx('自动 commit', 'Auto commit')}</div>
+                      <div className="data-sync-field-note">
+                        {tx('每次 Hub 写入后，自动在本地 mirror 仓库创建一条提交。', 'Create a commit in the local mirror after each Hub write.')}
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={gitMirrorDraft.auto_commit_enabled}
+                      onChange={(e) => updateGitMirrorDraft({ auto_commit_enabled: e.target.checked })}
+                    />
+                  </label>
+                  <label className="data-sync-toggle-card">
+                    <div className="data-sync-toggle-copy">
+                      <div className="data-sync-toggle-title">{tx('自动 push', 'Auto push')}</div>
+                      <div className="data-sync-field-note">
+                        {tx('同步成功后推送到远端；开启时会自动开启 auto commit。', 'Push to the remote after sync; enabling this also enables auto commit.')}
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={gitMirrorDraft.auto_push_enabled}
+                      onChange={(e) => updateGitMirrorDraft({ auto_push_enabled: e.target.checked, auto_commit_enabled: e.target.checked ? true : gitMirrorDraft.auto_commit_enabled })}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="data-sync-settings-section">
+                <h4 className="data-sync-section-title">{tx('远端配置', 'Remote settings')}</h4>
+                <div className="data-sync-settings-grid">
+                  <div className="form-group">
+                    <label htmlFor="settings-git-mirror-auth-mode">{tx('认证方式', 'Auth mode')}</label>
+                    <select
+                      id="settings-git-mirror-auth-mode"
+                      value={gitMirrorDraft.auth_mode}
+                      onChange={(e) => updateGitMirrorDraft({ auth_mode: e.target.value as UpdateGitMirrorRequest['auth_mode'] })}
+                    >
+                      <option value="local_credentials">{tx('本机 Git 凭证', 'Local Git credentials')}</option>
+                      <option value="github_token">{tx('GitHub Token', 'GitHub token')}</option>
+                      <option value="github_app_user">{tx('GitHub App 用户', 'GitHub App user')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group data-sync-settings-span-wide">
+                    <label htmlFor="settings-git-mirror-remote-url">{tx('仓库 URL', 'Repository URL')}</label>
+                    <input
+                      id="settings-git-mirror-remote-url"
+                      value={gitMirrorDraft.remote_url || ''}
+                      onChange={(e) => updateGitMirrorDraft({ remote_url: e.target.value })}
+                      placeholder="https://github.com/owner/neudrive-backup.git"
+                    />
+                  </div>
+                </div>
+                <div className="data-record-secondary" style={{ marginTop: 8 }}>
+                  {tx('远端名称和分支固定为 origin/main。', 'Remote name and branch are fixed to origin/main.')}
+                </div>
+              </section>
+
+              {gitMirrorDraft.auth_mode === 'github_token' && (
+                <section className="data-sync-settings-section">
+                  <h4 className="data-sync-section-title">{tx('GitHub Token', 'GitHub token')}</h4>
+                  <div className="form-group data-sync-settings-span-wide">
+                    <label htmlFor="settings-git-mirror-token">{tx('GitHub Token', 'GitHub token')}</label>
+                    <div className="data-sync-field-note">
+                      {gitMirror.github_token_configured
+                        ? tx('已经保存过 token；这里不会回显原值。填写新 token 会替换旧值。', 'A token is already saved; its raw value is never shown. Entering a new token replaces it.')
+                        : tx('当前还没有保存 GitHub token。', 'No GitHub token is saved yet.')}
+                    </div>
+                    <div className="data-sync-secret-row">
+                      <input
+                        id="settings-git-mirror-token"
+                        className="data-sync-secret-input"
+                        type={visibleSecrets.gitMirrorToken ? 'text' : 'password'}
+                        value={gitMirrorTokenInput}
+                        onChange={(e) => {
+                          setGitMirrorTokenInput(e.target.value)
+                          setGitMirrorTokenTest(null)
+                          setGitMirrorError('')
+                          setGitMirrorMessage('')
+                        }}
+                        placeholder={gitMirror.github_token_configured ? tx('留空以继续使用已保存的 token', 'Leave blank to keep the saved token') : 'ghp_xxx'}
+                      />
+                      <button
+                        type="button"
+                        className="btn data-sync-visibility-btn"
+                        onClick={() => toggleSecretVisibility('gitMirrorToken')}
+                        aria-label={visibleSecrets.gitMirrorToken ? tx('隐藏 GitHub token', 'Hide GitHub token') : tx('显示 GitHub token', 'Show GitHub token')}
+                        title={visibleSecrets.gitMirrorToken ? tx('隐藏', 'Hide') : tx('显示', 'Show')}
+                      >
+                        <EyeIcon visible={!!visibleSecrets.gitMirrorToken} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="data-sync-actions data-sync-actions-compact">
+                    <button className="btn" type="button" disabled={gitMirrorTesting || !gitMirrorDraft.remote_url || !gitMirrorTokenInput.trim()} onClick={handleGitMirrorTest}>
+                      {gitMirrorTesting ? tx('测试中...', 'Testing...') : tx('测试 Token', 'Test token')}
+                    </button>
+                    {gitMirror.github_token_configured && (
+                      <button className="btn" type="button" disabled={gitMirrorSaving} onClick={handleGitMirrorClearToken}>
+                        {tx('清除已保存 Token', 'Clear saved token')}
+                      </button>
+                    )}
+                  </div>
+                  {gitMirrorTokenTest && (
+                    <div className={gitMirrorTokenTest.ok ? 'alert alert-ok' : 'alert alert-warn'} style={{ marginTop: 12 }}>
+                      {gitMirrorTokenTest.message}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {gitMirrorDraft.auth_mode === 'github_app_user' && (
+                <section className="data-sync-settings-section">
+                  <h4 className="data-sync-section-title">{tx('GitHub App 用户', 'GitHub App user')}</h4>
+                  <div className="alert alert-warn">
+                    {tx('GitHub App 授权和默认仓库创建请在 GitHub Backup 页面完成。这里仅保留高级配置。', 'Complete GitHub App authorization and default repository creation on the GitHub Backup page. This area only keeps advanced settings.')}
+                  </div>
+                </section>
+              )}
+            </div>
+
+            {gitMirrorMessage && <div className="alert alert-ok" style={{ marginTop: 12 }}>{gitMirrorMessage}</div>}
+            {gitMirrorError && <div className="alert alert-warn" style={{ marginTop: 12 }}>{gitMirrorError}</div>}
+            {gitMirror.last_error && <div className="alert alert-warn" style={{ marginTop: 12 }}>{gitMirror.last_error}</div>}
+
+            <div className="data-sync-actions">
+              <button className="btn btn-primary" type="button" onClick={handleGitMirrorSave} disabled={gitMirrorSaving}>
+                {gitMirrorSaving ? tx('保存中...', 'Saving...') : tx('保存 Git Mirror 配置', 'Save Git Mirror settings')}
+              </button>
+              <button className="btn" type="button" onClick={() => { void loadGitMirror() }} disabled={gitMirrorBusy || gitMirrorSaving}>
+                {tx('重新加载', 'Reload')}
+              </button>
+            </div>
+          </>
+        )}
+        {!gitMirrorBusy && !gitMirror && gitMirrorError && (
+          <div className="alert alert-warn" style={{ marginTop: 16 }}>{gitMirrorError}</div>
+        )}
       </div>
     </div>
   )

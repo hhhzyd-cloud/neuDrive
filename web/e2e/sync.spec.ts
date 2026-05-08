@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { unzipSync, strFromU8 } from 'fflate'
-import { setupUser } from './helpers'
+import { mockPublicConfig, setupUser } from './helpers'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -117,8 +117,58 @@ test.describe('Bundle Sync', () => {
 
     await page.goto('/data/sync')
     await page.waitForURL(/\/sync-backup$/, { timeout: 15000 })
-    await expect(page.getByRole('heading', { name: 'GitHub Backup' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Backup destination' })).toBeVisible()
     await expect(page.locator('#git-mirror-auth-mode')).toBeVisible()
+    await expect(page.locator('#git-mirror-auth-mode option[value="local_credentials"]')).toHaveCount(1)
+    await expect(page.locator('#git-mirror-auth-mode option[value="github_token"]')).toHaveCount(1)
+    await expect(page.locator('#git-mirror-auth-mode option[value="github_app_user"]')).toHaveCount(1)
+    await page.locator('#git-mirror-auth-mode').selectOption('github_app_user')
+    await expect(page.getByText(/当前服务没有配置 GitHub App 授权|GitHub App authorization is not configured/)).toBeVisible()
+  })
+
+  test('hosted GitHub Backup hides advanced auth and sync internals', async ({ page, request }) => {
+    await setupUser(page, request)
+    await mockPublicConfig(page, {
+      git_mirror_execution_mode: 'hosted',
+      github_app_enabled: true,
+      github_app_slug: 'neudrive',
+      local_mode: false,
+    })
+    await page.route('**/api/git-mirror', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            enabled: true,
+            execution_mode: 'hosted',
+            sync_state: 'idle',
+            auto_commit_enabled: true,
+            auto_push_enabled: true,
+            auth_mode: 'github_app_user',
+            remote_name: 'origin',
+            remote_url: 'https://github.com/octocat/neudrive-backup.git',
+            remote_branch: 'main',
+            last_push_at: '2026-05-07T12:00:00Z',
+            github_token_configured: false,
+            github_app_user_connected: true,
+            github_app_user_login: 'octocat',
+          },
+        }),
+      })
+    })
+
+    await page.goto('/sync-backup')
+    await expect(page.getByRole('heading', { name: 'Backup destination' })).toBeVisible()
+    await expect(page.getByText(/最近更新时间|Last update/)).toBeVisible()
+    await expect(page.getByText('octocat/neudrive-backup')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /立即同步|Sync now/ })).toBeVisible()
+    await expect(page.getByText(/Execution mode|Sync state|Attempt count|Auto commit|Auto push|GitHub Token|Local Git credentials/)).toHaveCount(0)
   })
 
   test('preview mirror deletes with sync preview API', async ({ request, page }) => {

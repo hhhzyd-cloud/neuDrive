@@ -79,7 +79,7 @@ type gitHubCreateRepoRequest struct {
 
 func defaultAuthModeForExecution(executionMode string) string {
 	if executionMode == ExecutionModeHosted {
-		return AuthModeGitHubToken
+		return AuthModeGitHubAppUser
 	}
 	return AuthModeLocalCredentials
 }
@@ -340,6 +340,119 @@ func (s *Service) CreateGitHubAppRepo(ctx context.Context, userID uuid.UUID, req
 	}
 	repo := mapGitHubRepo(created)
 	return &repo, nil
+}
+
+func (s *Service) CreateOrReuseDefaultGitHubAppBackupRepo(ctx context.Context, userID uuid.UUID) (*GitHubDefaultBackupRepoResult, error) {
+	token, _, err := s.refreshGitHubAppUserAccessToken(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	viewer, err := s.fetchGitHubAppViewer(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	ownerLogin := strings.TrimSpace(viewer.Login)
+	if ownerLogin == "" {
+		return nil, fmt.Errorf("GitHub App user login is missing")
+	}
+
+	repoItem, found, err := s.fetchGitHubAppRepo(ctx, token, ownerLogin, DefaultBackupRepoName)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		created := gitHubRepoItem{}
+		if err := s.githubRequestWithTokenJSON(ctx, token, http.MethodPost, "/user/repos", gitHubCreateRepoRequest{
+			Name:        DefaultBackupRepoName,
+			Description: "neuDrive backup repository",
+			Private:     true,
+			AutoInit:    false,
+		}, &created); err != nil {
+			return nil, err
+		}
+		repoItem = &created
+	}
+
+	repo := mapGitHubRepo(*repoItem)
+	if !canPushPermission(repo.ViewerPermission) {
+		return nil, fmt.Errorf("GitHub App user does not have write access to %s", repo.FullName)
+	}
+	settings, err := s.saveGitHubAppBackupRepo(ctx, userID, repo)
+	if err != nil {
+		return nil, err
+	}
+	return &GitHubDefaultBackupRepoResult{
+		Settings: settings,
+		Repo:     repo,
+	}, nil
+}
+
+func (s *Service) fetchGitHubAppRepo(ctx context.Context, token, ownerLogin, repoName string) (*gitHubRepoItem, bool, error) {
+	client := s.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	fullURL := strings.TrimRight(s.githubAPIBaseURL, "/") + "/repos/" + url.PathEscape(ownerLogin) + "/" + url.PathEscape(repoName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		msg := strings.TrimSpace(string(raw))
+		if msg == "" {
+			msg = resp.Status
+		}
+		return nil, false, fmt.Errorf("github api returned %s: %s", resp.Status, msg)
+	}
+	repo := gitHubRepoItem{}
+	if err := json.NewDecoder(resp.Body).Decode(&repo); err != nil {
+		return nil, false, err
+	}
+	return &repo, true, nil
+}
+
+func (s *Service) saveGitHubAppBackupRepo(ctx context.Context, userID uuid.UUID, repo GitHubMirrorRepo) (*MirrorSettings, error) {
+	mirror, active, err := s.ensureMirror(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	mirror.AuthMode = AuthModeGitHubAppUser
+	mirror.RemoteName = DefaultRemoteName
+	mirror.RemoteBranch = DefaultRemoteBranch
+	mirror.RemoteURL = strings.TrimSpace(repo.CloneURL)
+	mirror.AutoCommitEnabled = true
+	mirror.AutoPushEnabled = true
+	mirror.GitHubRepoPermission = strings.TrimSpace(repo.ViewerPermission)
+	mirror.RemoteConflict = false
+	mirror.ForceRemoteOverwrite = false
+	mirror.LastPushError = ""
+	mirror.CreatedAt = mirrorCreatedAt(active, now)
+	mirror.UpdatedAt = now
+	if err := s.mirrors.UpsertActiveLocalGitMirror(ctx, mirror); err != nil {
+		return nil, err
+	}
+	tokenConfigured, err := s.hasStoredGitHubToken(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	appConnected, err := s.hasStoredGitHubAppRefreshToken(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return buildMirrorSettings(mirror, tokenConfigured, appConnected, s.configuredExecutionMode()), nil
 }
 
 func (s *Service) testGitHubAppRepoAccess(ctx context.Context, userID uuid.UUID, remoteURL string) (*gitHubRepoAccessResult, error) {

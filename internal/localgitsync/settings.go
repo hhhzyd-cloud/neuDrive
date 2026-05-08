@@ -71,6 +71,16 @@ func (s *Service) UpdateMirrorSettings(ctx context.Context, userID uuid.UUID, up
 	if err := applySettingsUpdate(&mirror, update); err != nil {
 		return nil, err
 	}
+	remoteChanged := settingsRemoteChanged(active, mirror)
+	authModeChanged := settingsAuthModeChanged(active, mirror)
+	if remoteChanged || authModeChanged {
+		mirror.RemoteConflict = false
+		mirror.ForceRemoteOverwrite = false
+		mirror.LastPushError = ""
+	}
+	if mirror.AuthMode == AuthModeLocalCredentials && isGitHubHTTPSRemote(mirror.RemoteURL) {
+		return nil, fmt.Errorf("local Git credentials require a repository URL in the form git@github.com:owner/repo.git")
+	}
 
 	tokenChanged := strings.TrimSpace(update.GitHubToken) != ""
 	tokenValue, tokenConfigured, err := s.resolveGitHubTokenForSettings(ctx, userID, update)
@@ -104,11 +114,11 @@ func (s *Service) UpdateMirrorSettings(ctx context.Context, userID uuid.UUID, up
 	verificationNeeded := mirror.AuthMode == AuthModeGitHubToken &&
 		strings.TrimSpace(mirror.RemoteURL) != "" &&
 		tokenConfigured &&
-		(tokenChanged || settingsRemoteChanged(active, mirror) || mirror.AutoPushEnabled)
+		(tokenChanged || remoteChanged || mirror.AutoPushEnabled)
 	appVerificationNeeded := mirror.AuthMode == AuthModeGitHubAppUser &&
 		strings.TrimSpace(mirror.RemoteURL) != "" &&
 		appConnected &&
-		(settingsRemoteChanged(active, mirror) || settingsAuthModeChanged(active, mirror) || mirror.AutoPushEnabled || strings.TrimSpace(mirror.GitHubRepoPermission) == "")
+		(remoteChanged || authModeChanged || mirror.AutoPushEnabled || strings.TrimSpace(mirror.GitHubRepoPermission) == "")
 
 	if mirror.AuthMode != AuthModeGitHubToken || !tokenConfigured || strings.TrimSpace(mirror.RemoteURL) == "" {
 		clearGitHubTokenVerification(&mirror)
@@ -136,7 +146,7 @@ func (s *Service) UpdateMirrorSettings(ctx context.Context, userID uuid.UUID, up
 		}
 	}
 	if mirror.AuthMode == AuthModeGitHubAppUser && strings.TrimSpace(mirror.RemoteURL) != "" && !appConnected &&
-		(settingsRemoteChanged(active, mirror) || settingsAuthModeChanged(active, mirror) || mirror.AutoPushEnabled) {
+		(remoteChanged || authModeChanged || mirror.AutoPushEnabled) {
 		return nil, fmt.Errorf("connect the GitHub App account before selecting a GitHub repository")
 	}
 	if appVerificationNeeded {
@@ -320,6 +330,8 @@ func buildMirrorSettings(mirror models.LocalGitMirror, tokenConfigured, appConne
 		LastCommitHash:                strings.TrimSpace(normalized.LastCommitHash),
 		LastPushAt:                    formatOptionalTime(normalized.LastPushAt),
 		LastPushError:                 strings.TrimSpace(normalized.LastPushError),
+		RemoteConflict:                normalized.RemoteConflict,
+		ForceRemoteOverwrite:          normalized.ForceRemoteOverwrite,
 		GitHubTokenConfigured:         tokenConfigured,
 		GitHubTokenVerifiedAt:         formatOptionalTime(normalized.GitHubTokenVerifiedAt),
 		GitHubTokenLogin:              strings.TrimSpace(normalized.GitHubTokenLogin),
@@ -499,10 +511,22 @@ func normalizeGitHubRemoteURL(remoteURL string) (normalizedURL, owner, repo stri
 	return fmt.Sprintf("https://github.com/%s/%s.git", owner, repo), owner, repo, nil
 }
 
+func isGitHubHTTPSRemote(remoteURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(remoteURL))
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return (scheme == "https" || scheme == "http") && strings.EqualFold(parsed.Host, "github.com")
+}
+
 func mirrorSummaryMessage(mirror models.LocalGitMirror, commitCreated, pushAttempted, pushSucceeded bool) string {
 	if mirror.ExecutionMode == ExecutionModeHosted {
 		switch mirror.SyncState {
 		case SyncStateQueued:
+			if mirror.ForceRemoteOverwrite {
+				return "已确认用 neuDrive 覆盖远端，等待后台 worker 推送。"
+			}
 			if mirror.SyncNextAttemptAt != nil && !mirror.SyncNextAttemptAt.IsZero() {
 				return fmt.Sprintf("Git Mirror 已排队，将在 %s 重试。", mirror.SyncNextAttemptAt.UTC().Format(time.RFC3339))
 			}
@@ -515,6 +539,9 @@ func mirrorSummaryMessage(mirror models.LocalGitMirror, commitCreated, pushAttem
 			}
 			return "Git Mirror 后台同步失败。"
 		}
+	}
+	if mirror.RemoteConflict {
+		return "远端仓库有 neuDrive 之外的新提交。普通同步已停止，确认后可用 neuDrive 覆盖远端。"
 	}
 	base := "Git Mirror 已同步。"
 	if strings.TrimSpace(mirror.RootPath) != "" {
@@ -530,12 +557,31 @@ func mirrorSummaryMessage(mirror models.LocalGitMirror, commitCreated, pushAttem
 		if pushSucceeded {
 			parts = append(parts, fmt.Sprintf("已自动推送到 %s/%s。", mirror.RemoteName, mirror.RemoteBranch))
 		} else if strings.TrimSpace(mirror.LastPushError) != "" {
-			parts = append(parts, fmt.Sprintf("自动推送失败: %s。", mirror.LastPushError))
+			parts = append(parts, fmt.Sprintf("自动推送失败: %s。", friendlyPushError(mirror.LastPushError)))
 		}
 	} else if mirror.AutoPushEnabled && strings.TrimSpace(mirror.LastPushError) != "" {
-		parts = append(parts, fmt.Sprintf("最近一次自动推送失败: %s。", mirror.LastPushError))
+		parts = append(parts, fmt.Sprintf("最近一次自动推送失败: %s。", friendlyPushError(mirror.LastPushError)))
 	}
 	return strings.Join(parts, "")
+}
+
+func friendlyPushError(raw string) string {
+	message := strings.TrimSpace(raw)
+	lower := strings.ToLower(message)
+	switch {
+	case strings.Contains(lower, "repository not found"):
+		return "GitHub 找不到这个仓库，或当前凭证没有访问权限。请确认仓库已创建、URL 正确，并且当前认证方式有权限；如果使用 SSH key，请填写 git@github.com:owner/repo.git"
+	case strings.Contains(lower, "authentication failed") ||
+		strings.Contains(lower, "could not read username") ||
+		strings.Contains(lower, "permission denied"):
+		return "GitHub 认证失败。请确认当前认证方式可访问这个仓库，或改用 GitHub App user 授权"
+	case strings.Contains(lower, "remote has commits that are not in this neudrive mirror"):
+		return "远端仓库有 neuDrive 之外的新提交。确认后可用 neuDrive 覆盖远端"
+	case message == "":
+		return "请检查仓库地址和 GitHub 权限"
+	default:
+		return message
+	}
 }
 
 func shortCommitHash(hash string) string {

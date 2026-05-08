@@ -9,37 +9,39 @@ import (
 )
 
 type Config struct {
-	DatabaseURL             string
-	Port                    string
-	JWTSecret               string
-	UserStorageQuotaBytes   int64
-	GithubClientID          string
-	GithubClientSecret      string
-	PocketProviderID        string
-	PocketIssuer            string
-	PocketDiscoveryURL      string
-	PocketClientID          string
-	PocketClientSecret      string
-	PocketScopes            []string
-	GitHubAppClientID       string
-	GitHubAppClientSecret   string
-	GitHubAppSlug           string
-	GitMirrorHostedRoot     string
-	FeishuAppID             string
-	FeishuAppSecret         string
-	FeishuVerificationToken string
-	FeishuEncryptKey        string
-	VaultMasterKey          string
-	PublicBaseURL           string
-	CORSOrigins             []string
-	RateLimit               int   // max requests per minute
-	MaxBodySize             int64 // max request body in bytes
-	LogLevel                string
-	LogFormat               string
-	EnableSystemSettings    bool
-	EnableBilling           bool
-	CaptureOAuth            bool
-	CaptureDir              string
+	DatabaseURL                           string
+	Port                                  string
+	JWTSecret                             string
+	UserStorageQuotaBytes                 int64
+	GithubClientID                        string
+	GithubClientSecret                    string
+	PocketProviderID                      string
+	PocketIssuer                          string
+	PocketDiscoveryURL                    string
+	PocketClientID                        string
+	PocketClientSecret                    string
+	PocketScopes                          []string
+	GitHubAppClientID                     string
+	GitHubAppClientSecret                 string
+	GitHubAppSlug                         string
+	GitMirrorHostedRoot                   string
+	GitMirrorManualSyncCooldownSeconds    int
+	GitMirrorManualSyncCooldownConfigured bool
+	FeishuAppID                           string
+	FeishuAppSecret                       string
+	FeishuVerificationToken               string
+	FeishuEncryptKey                      string
+	VaultMasterKey                        string
+	PublicBaseURL                         string
+	CORSOrigins                           []string
+	RateLimit                             int   // max requests per minute
+	MaxBodySize                           int64 // max request body in bytes
+	LogLevel                              string
+	LogFormat                             string
+	EnableSystemSettings                  bool
+	EnableBilling                         bool
+	CaptureOAuth                          bool
+	CaptureDir                            string
 }
 
 func Load() (*Config, error) {
@@ -87,6 +89,14 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		EnableBilling:           getEnvBool("NEUDRIVE_ENABLE_BILLING", false),
 		CaptureOAuth:            getEnvBool("NEUDRIVE_CAPTURE_OAUTH", false),
 		CaptureDir:              envOrOverride("NEUDRIVE_CAPTURE_DIR", "tmp/oauth-captures"),
+	}
+	if rawCooldown := strings.TrimSpace(envOrOverride("GIT_MIRROR_MANUAL_SYNC_COOLDOWN_SECONDS", "")); rawCooldown != "" {
+		cooldown, err := strconv.Atoi(rawCooldown)
+		if err != nil || cooldown < 0 {
+			return nil, fmt.Errorf("invalid GIT_MIRROR_MANUAL_SYNC_COOLDOWN_SECONDS: must be a non-negative integer")
+		}
+		cfg.GitMirrorManualSyncCooldownSeconds = cooldown
+		cfg.GitMirrorManualSyncCooldownConfigured = true
 	}
 
 	quotaBytes, err := parseByteSize(envOrOverride("USER_STORAGE_QUOTA_BYTES", "0"))

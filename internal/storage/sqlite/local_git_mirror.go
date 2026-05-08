@@ -19,6 +19,7 @@ func (s *Store) GetActiveLocalGitMirror(ctx context.Context, userID uuid.UUID) (
 		        COALESCE(git_initialized_at, ''), COALESCE(last_synced_at, ''),
 		        COALESCE(last_error, ''), COALESCE(last_commit_at, ''), COALESCE(last_commit_hash, ''),
 		        COALESCE(last_push_at, ''), COALESCE(last_push_error, ''),
+		        COALESCE(remote_conflict, 0), COALESCE(force_remote_overwrite, 0),
 		        COALESCE(sync_requested_at, ''), COALESCE(sync_started_at, ''), COALESCE(sync_next_attempt_at, ''),
 		        COALESCE(sync_attempt_count, 0),
 		        COALESCE(github_token_verified_at, ''), COALESCE(github_token_login, ''),
@@ -50,6 +51,8 @@ func (s *Store) GetActiveLocalGitMirror(ctx context.Context, userID uuid.UUID) (
 		lastCommitHash                string
 		lastPushAt                    string
 		lastPushError                 string
+		remoteConflict                bool
+		forceRemoteOverwrite          bool
 		syncRequestedAt               string
 		syncStartedAt                 string
 		syncNextAttemptAt             string
@@ -82,6 +85,8 @@ func (s *Store) GetActiveLocalGitMirror(ctx context.Context, userID uuid.UUID) (
 		&lastCommitHash,
 		&lastPushAt,
 		&lastPushError,
+		&remoteConflict,
+		&forceRemoteOverwrite,
 		&syncRequestedAt,
 		&syncStartedAt,
 		&syncNextAttemptAt,
@@ -123,6 +128,8 @@ func (s *Store) GetActiveLocalGitMirror(ctx context.Context, userID uuid.UUID) (
 		LastCommitHash:            lastCommitHash,
 		LastPushAt:                nullableTime(lastPushAt),
 		LastPushError:             lastPushError,
+		RemoteConflict:            remoteConflict,
+		ForceRemoteOverwrite:      forceRemoteOverwrite,
 		SyncRequestedAt:           nullableTime(syncRequestedAt),
 		SyncStartedAt:             nullableTime(syncStartedAt),
 		SyncNextAttemptAt:         nullableTime(syncNextAttemptAt),
@@ -149,12 +156,12 @@ func (s *Store) UpsertActiveLocalGitMirror(ctx context.Context, mirror models.Lo
 		`INSERT INTO local_git_mirrors (
 			user_id, root_path, is_active, execution_mode, sync_state, auto_commit_enabled, auto_push_enabled,
 			auth_mode, remote_name, remote_url, remote_branch, git_initialized_at, last_synced_at, last_error,
-			last_commit_at, last_commit_hash, last_push_at, last_push_error, sync_requested_at, sync_started_at,
-			sync_next_attempt_at, sync_attempt_count, github_token_verified_at, github_token_login,
+			last_commit_at, last_commit_hash, last_push_at, last_push_error, remote_conflict, force_remote_overwrite,
+			sync_requested_at, sync_started_at, sync_next_attempt_at, sync_attempt_count, github_token_verified_at, github_token_login,
 			github_repo_permission, github_app_user_login, github_app_user_authorized_at,
 			github_app_user_refresh_expires_at, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(user_id) DO UPDATE SET
 			root_path = excluded.root_path,
 			is_active = excluded.is_active,
@@ -173,6 +180,8 @@ func (s *Store) UpsertActiveLocalGitMirror(ctx context.Context, mirror models.Lo
 			last_commit_hash = excluded.last_commit_hash,
 			last_push_at = excluded.last_push_at,
 			last_push_error = excluded.last_push_error,
+			remote_conflict = excluded.remote_conflict,
+			force_remote_overwrite = excluded.force_remote_overwrite,
 			sync_requested_at = excluded.sync_requested_at,
 			sync_started_at = excluded.sync_started_at,
 			sync_next_attempt_at = excluded.sync_next_attempt_at,
@@ -202,6 +211,8 @@ func (s *Store) UpsertActiveLocalGitMirror(ctx context.Context, mirror models.Lo
 		mirror.LastCommitHash,
 		localGitMirrorNullableTimeText(mirror.LastPushAt),
 		mirror.LastPushError,
+		boolToSQLite(mirror.RemoteConflict),
+		boolToSQLite(mirror.ForceRemoteOverwrite),
 		localGitMirrorNullableTimeText(mirror.SyncRequestedAt),
 		localGitMirrorNullableTimeText(mirror.SyncStartedAt),
 		localGitMirrorNullableTimeText(mirror.SyncNextAttemptAt),

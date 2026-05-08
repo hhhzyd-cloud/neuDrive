@@ -21,6 +21,7 @@ const (
 	SyncStateError           = "error"
 	DefaultRemoteName        = "origin"
 	DefaultRemoteBranch      = "main"
+	DefaultBackupRepoName    = "neudrive-backup"
 
 	gitMirrorGitHubTokenScope           = "auth.github.git_mirror"
 	gitMirrorGitHubAppRefreshTokenScope = "auth.github.git_mirror.app_user_refresh_token"
@@ -94,30 +95,32 @@ func WithStateSigningSecret(secret string) Option {
 }
 
 type SyncInfo struct {
-	Enabled           bool   `json:"enabled"`
-	Path              string `json:"path,omitempty"`
-	ExecutionMode     string `json:"execution_mode,omitempty"`
-	SyncState         string `json:"sync_state,omitempty"`
-	SyncRequestedAt   string `json:"sync_requested_at,omitempty"`
-	SyncStartedAt     string `json:"sync_started_at,omitempty"`
-	SyncNextAttemptAt string `json:"sync_next_attempt_at,omitempty"`
-	SyncAttemptCount  int    `json:"sync_attempt_count,omitempty"`
-	Synced            bool   `json:"synced"`
-	LastSyncedAt      string `json:"last_synced_at,omitempty"`
-	Message           string `json:"message,omitempty"`
-	LastError         string `json:"last_error,omitempty"`
-	AutoCommitEnabled bool   `json:"auto_commit_enabled,omitempty"`
-	AutoPushEnabled   bool   `json:"auto_push_enabled,omitempty"`
-	AuthMode          string `json:"auth_mode,omitempty"`
-	RemoteName        string `json:"remote_name,omitempty"`
-	RemoteBranch      string `json:"remote_branch,omitempty"`
-	LastCommitAt      string `json:"last_commit_at,omitempty"`
-	LastCommitHash    string `json:"last_commit_hash,omitempty"`
-	LastPushAt        string `json:"last_push_at,omitempty"`
-	LastPushError     string `json:"last_push_error,omitempty"`
-	CommitCreated     bool   `json:"commit_created,omitempty"`
-	PushAttempted     bool   `json:"push_attempted,omitempty"`
-	PushSucceeded     bool   `json:"push_succeeded,omitempty"`
+	Enabled              bool   `json:"enabled"`
+	Path                 string `json:"path,omitempty"`
+	ExecutionMode        string `json:"execution_mode,omitempty"`
+	SyncState            string `json:"sync_state,omitempty"`
+	SyncRequestedAt      string `json:"sync_requested_at,omitempty"`
+	SyncStartedAt        string `json:"sync_started_at,omitempty"`
+	SyncNextAttemptAt    string `json:"sync_next_attempt_at,omitempty"`
+	SyncAttemptCount     int    `json:"sync_attempt_count,omitempty"`
+	Synced               bool   `json:"synced"`
+	LastSyncedAt         string `json:"last_synced_at,omitempty"`
+	Message              string `json:"message,omitempty"`
+	LastError            string `json:"last_error,omitempty"`
+	AutoCommitEnabled    bool   `json:"auto_commit_enabled,omitempty"`
+	AutoPushEnabled      bool   `json:"auto_push_enabled,omitempty"`
+	AuthMode             string `json:"auth_mode,omitempty"`
+	RemoteName           string `json:"remote_name,omitempty"`
+	RemoteBranch         string `json:"remote_branch,omitempty"`
+	LastCommitAt         string `json:"last_commit_at,omitempty"`
+	LastCommitHash       string `json:"last_commit_hash,omitempty"`
+	LastPushAt           string `json:"last_push_at,omitempty"`
+	LastPushError        string `json:"last_push_error,omitempty"`
+	RemoteConflict       bool   `json:"remote_conflict,omitempty"`
+	ForceRemoteOverwrite bool   `json:"force_remote_overwrite,omitempty"`
+	CommitCreated        bool   `json:"commit_created,omitempty"`
+	PushAttempted        bool   `json:"push_attempted,omitempty"`
+	PushSucceeded        bool   `json:"push_succeeded,omitempty"`
 }
 
 type MirrorSettings struct {
@@ -141,6 +144,8 @@ type MirrorSettings struct {
 	LastCommitHash                string `json:"last_commit_hash,omitempty"`
 	LastPushAt                    string `json:"last_push_at,omitempty"`
 	LastPushError                 string `json:"last_push_error,omitempty"`
+	RemoteConflict                bool   `json:"remote_conflict,omitempty"`
+	ForceRemoteOverwrite          bool   `json:"force_remote_overwrite,omitempty"`
 	GitHubTokenConfigured         bool   `json:"github_token_configured"`
 	GitHubTokenVerifiedAt         string `json:"github_token_verified_at,omitempty"`
 	GitHubTokenLogin              string `json:"github_token_login,omitempty"`
@@ -200,6 +205,11 @@ type GitHubMirrorRepoCreateRequest struct {
 	Private      bool   `json:"private"`
 	RemoteName   string `json:"remote_name,omitempty"`
 	RemoteBranch string `json:"remote_branch,omitempty"`
+}
+
+type GitHubDefaultBackupRepoResult struct {
+	Settings *MirrorSettings  `json:"settings"`
+	Repo     GitHubMirrorRepo `json:"repo"`
 }
 
 type GitHubTokenTestResult struct {

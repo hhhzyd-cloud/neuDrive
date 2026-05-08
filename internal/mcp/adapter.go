@@ -162,7 +162,7 @@ func (s *MCPServer) appendLocalGitSyncMessage(ctx context.Context, result string
 	if s == nil || s.LocalGitSync == nil {
 		return result
 	}
-	info, _ := s.LocalGitSync.SyncActiveMirror(ctx, s.UserID)
+	info, _ := s.LocalGitSync.SyncActiveMirror(ctx, s.UserID, false)
 	if info == nil || !info.Enabled || strings.TrimSpace(info.Message) == "" {
 		return result
 	}

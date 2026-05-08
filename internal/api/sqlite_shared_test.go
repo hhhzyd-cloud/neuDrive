@@ -9,9 +9,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +32,8 @@ type testEnvelope struct {
 	OK           bool            `json:"ok"`
 	Data         json.RawMessage `json:"data"`
 	LocalGitSync json.RawMessage `json:"local_git_sync,omitempty"`
+	Code         string          `json:"code,omitempty"`
+	Message      string          `json:"message,omitempty"`
 	Error        struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -287,7 +291,7 @@ func TestPublicConfigUsesLocalModeInsteadOfStorageBackend(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	for _, expected := range []string{`"storage":"postgres"`, `"local_mode":true`, `"system_settings_enabled":true`} {
+	for _, expected := range []string{`"storage":"postgres"`, `"local_mode":true`, `"system_settings_enabled":true`, `"git_mirror_manual_sync_cooldown_seconds":0`} {
 		if !bytes.Contains(payload.Data, []byte(expected)) {
 			t.Fatalf("expected %q in config payload: %s", expected, string(payload.Data))
 		}
@@ -393,6 +397,203 @@ func TestHostedGitMirrorAPIRemainsAvailableWhenSystemSettingsDisabled(t *testing
 	}`))
 	if status != http.StatusBadRequest || updated.OK {
 		t.Fatalf("expected hosted local_credentials update to fail: status=%d body=%+v", status, updated)
+	}
+}
+
+func TestHostedGitMirrorDefaultBackupRepoCreatesAndReuses(t *testing.T) {
+	ghState := &fakeGitHubAppOAuthState{
+		login:      "octocat",
+		permission: "write",
+	}
+	gh := newFakeGitHubAppOAuthServer(t, ghState)
+	cfg := &config.Config{
+		JWTSecret:             testJWTSecret,
+		VaultMasterKey:        strings.Repeat("0", 64),
+		CORSOrigins:           []string{"http://localhost:3000"},
+		RateLimit:             100,
+		MaxBodySize:           10 * 1024 * 1024,
+		PublicBaseURL:         "http://127.0.0.1:0",
+		GitHubAppClientID:     "client-id",
+		GitHubAppClientSecret: "client-secret",
+		GitHubAppSlug:         "neudrive",
+	}
+	ts, _, adminToken := newHostedTestHTTPServerWithConfig(
+		t,
+		cfg,
+		localgitsync.WithGitHubAPIBaseURL(gh.URL),
+		localgitsync.WithGitHubBaseURL(gh.URL),
+		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		localgitsync.WithHTTPClient(gh.Client()),
+	)
+	connectGitHubAppUserForTest(t, ts.URL, adminToken)
+
+	status, created := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/github-app/default-backup-repo", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !created.OK {
+		t.Fatalf("default backup repo create failed: status=%d body=%+v", status, created)
+	}
+	for _, expected := range []string{
+		`"repo_name":"neudrive-backup"`,
+		`"remote_url":"https://github.com/octocat/neudrive-backup.git"`,
+		`"auth_mode":"github_app_user"`,
+		`"auto_push_enabled":true`,
+		`"remote_name":"origin"`,
+		`"remote_branch":"main"`,
+	} {
+		if !bytes.Contains(created.Data, []byte(expected)) {
+			t.Fatalf("expected %q in created payload: %s", expected, string(created.Data))
+		}
+	}
+	if got := ghState.createCountValue(); got != 1 {
+		t.Fatalf("create count after first call = %d, want 1", got)
+	}
+
+	status, reused := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/github-app/default-backup-repo", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !reused.OK {
+		t.Fatalf("default backup repo reuse failed: status=%d body=%+v", status, reused)
+	}
+	if got := ghState.createCountValue(); got != 1 {
+		t.Fatalf("create count after reuse = %d, want 1", got)
+	}
+}
+
+func TestHostedGitMirrorDefaultBackupRepoRequiresGitHubAppConnection(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:             testJWTSecret,
+		VaultMasterKey:        strings.Repeat("0", 64),
+		CORSOrigins:           []string{"http://localhost:3000"},
+		RateLimit:             100,
+		MaxBodySize:           10 * 1024 * 1024,
+		PublicBaseURL:         "http://127.0.0.1:0",
+		GitHubAppClientID:     "client-id",
+		GitHubAppClientSecret: "client-secret",
+		GitHubAppSlug:         "neudrive",
+	}
+	ts, _, adminToken := newHostedTestHTTPServerWithConfig(
+		t,
+		cfg,
+		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+	)
+
+	status, failed := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/github-app/default-backup-repo", adminToken, []byte(`{}`))
+	if status != http.StatusBadRequest || failed.OK {
+		t.Fatalf("expected default backup repo without connection to fail: status=%d body=%+v", status, failed)
+	}
+	if !strings.Contains(failed.Message+failed.Error.Message, "not connected") {
+		t.Fatalf("expected not connected error, got %+v", failed)
+	}
+}
+
+func TestHostedGitMirrorManualSyncIsRateLimited(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:            testJWTSecret,
+		VaultMasterKey:       strings.Repeat("0", 64),
+		CORSOrigins:          []string{"http://localhost:3000"},
+		RateLimit:            100,
+		MaxBodySize:          10 * 1024 * 1024,
+		PublicBaseURL:        "http://127.0.0.1:0",
+		EnableSystemSettings: false,
+	}
+	ts, _, adminToken := newHostedTestHTTPServerWithConfig(t, cfg)
+	status, updated := doJSON(t, http.MethodPut, ts.URL+"/api/git-mirror", adminToken, []byte(`{
+		"auto_commit_enabled": true,
+		"auto_push_enabled": false,
+		"auth_mode": "github_token",
+		"remote_name": "origin",
+		"remote_url": "https://github.com/acme/demo.git",
+		"remote_branch": "main"
+	}`))
+	if status != http.StatusOK || !updated.OK {
+		t.Fatalf("PUT /api/git-mirror failed: status=%d body=%+v", status, updated)
+	}
+
+	status, first := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/sync", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !first.OK {
+		t.Fatalf("first sync failed: status=%d body=%+v", status, first)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/git-mirror/sync", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("second sync request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("second sync status = %d, want 429", resp.StatusCode)
+	}
+	if resp.Header.Get("Retry-After") == "" {
+		t.Fatalf("expected Retry-After header")
+	}
+	var failed struct {
+		Code          string `json:"code"`
+		RetryAfterSec int    `json:"retry_after_sec"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&failed); err != nil {
+		t.Fatalf("decode rate limit response: %v", err)
+	}
+	if failed.Code != ErrCodeRateLimit || failed.RetryAfterSec <= 0 {
+		t.Fatalf("unexpected rate limit payload: %+v", failed)
+	}
+}
+
+func TestHostedGitMirrorManualSyncRateLimitCanBeDisabled(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:                             testJWTSecret,
+		VaultMasterKey:                        strings.Repeat("0", 64),
+		CORSOrigins:                           []string{"http://localhost:3000"},
+		RateLimit:                             100,
+		MaxBodySize:                           10 * 1024 * 1024,
+		PublicBaseURL:                         "http://127.0.0.1:0",
+		EnableSystemSettings:                  false,
+		GitMirrorManualSyncCooldownSeconds:    0,
+		GitMirrorManualSyncCooldownConfigured: true,
+	}
+	ts, _, adminToken := newHostedTestHTTPServerWithConfig(t, cfg)
+	status, updated := doJSON(t, http.MethodPut, ts.URL+"/api/git-mirror", adminToken, []byte(`{
+		"auto_commit_enabled": true,
+		"auto_push_enabled": false,
+		"auth_mode": "github_token",
+		"remote_name": "origin",
+		"remote_url": "https://github.com/acme/demo.git",
+		"remote_branch": "main"
+	}`))
+	if status != http.StatusOK || !updated.OK {
+		t.Fatalf("PUT /api/git-mirror failed: status=%d body=%+v", status, updated)
+	}
+
+	for i := 0; i < 2; i++ {
+		status, synced := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/sync", adminToken, []byte(`{}`))
+		if status != http.StatusOK || !synced.OK {
+			t.Fatalf("sync %d failed with disabled rate limit: status=%d body=%+v", i+1, status, synced)
+		}
+	}
+}
+
+func TestLocalGitMirrorManualSyncIsNotRateLimitedByDefault(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	v, err := vault.NewVault(strings.Repeat("0", 64))
+	if err != nil {
+		t.Fatalf("NewVault: %v", err)
+	}
+	mirrorSvc := localgitsync.New(store, v)
+	if _, err := mirrorSvc.RegisterMirrorAndSync(ctx, user.ID, filepath.Join(t.TempDir(), "mirror")); err != nil {
+		t.Fatalf("RegisterMirrorAndSync: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		status, synced := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/sync", adminToken, []byte(`{}`))
+		if status != http.StatusOK || !synced.OK {
+			t.Fatalf("local sync %d should not be rate limited by default: status=%d body=%+v", i+1, status, synced)
+		}
 	}
 }
 
@@ -1487,6 +1688,142 @@ func newFakeGitHubServer(t *testing.T, states map[string]fakeGitHubTokenState) *
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"full_name":   state.fullName,
 				"permissions": permissions,
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"not found"}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+type fakeGitHubAppOAuthState struct {
+	mu          sync.Mutex
+	login       string
+	permission  string
+	repoExists  bool
+	createCount int
+}
+
+func (s *fakeGitHubAppOAuthState) createCountValue() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.createCount
+}
+
+func (s *fakeGitHubAppOAuthState) permissionFlags() map[string]bool {
+	permission := strings.TrimSpace(s.permission)
+	if permission == "" {
+		permission = "write"
+	}
+	return map[string]bool{
+		"admin": permission == "admin",
+		"push":  permission == "admin" || permission == "write",
+		"pull":  permission == "admin" || permission == "write" || permission == "read",
+	}
+}
+
+func connectGitHubAppUserForTest(t *testing.T, baseURL, token string) {
+	t.Helper()
+	status, started := doJSON(t, http.MethodPost, baseURL+"/api/git-mirror/github-app/browser/start", token, []byte(`{"return_to":"/sync-backup"}`))
+	if status != http.StatusOK || !started.OK {
+		t.Fatalf("start github app browser flow failed: status=%d body=%+v", status, started)
+	}
+	var payload struct {
+		AuthorizationURL string `json:"authorization_url"`
+	}
+	if err := json.Unmarshal(started.Data, &payload); err != nil {
+		t.Fatalf("unmarshal browser start: %v", err)
+	}
+	parsed, err := url.Parse(payload.AuthorizationURL)
+	if err != nil {
+		t.Fatalf("parse authorization url: %v", err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" {
+		t.Fatalf("authorization URL missing state: %s", payload.AuthorizationURL)
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(baseURL + "/api/git-mirror/github-app/callback?code=test-code&state=" + url.QueryEscape(state))
+	if err != nil {
+		t.Fatalf("callback request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("callback status = %d body=%s", resp.StatusCode, string(body))
+	}
+}
+
+func newFakeGitHubAppOAuthServer(t *testing.T, state *fakeGitHubAppOAuthState) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		login := strings.TrimSpace(state.login)
+		if login == "" {
+			login = "octocat"
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/login/oauth/access_token":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":             "ghu_access",
+				"refresh_token":            "ghu_refresh_next",
+				"expires_in":               3600,
+				"refresh_token_expires_in": 7200,
+				"token_type":               "bearer",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/user":
+			_ = json.NewEncoder(w).Encode(map[string]any{"login": login})
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/"+login+"/neudrive-backup":
+			state.mu.Lock()
+			exists := state.repoExists
+			permissions := state.permissionFlags()
+			state.mu.Unlock()
+			if !exists {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"message":"not found"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":           "neudrive-backup",
+				"full_name":      login + "/neudrive-backup",
+				"default_branch": "main",
+				"clone_url":      "https://github.com/" + login + "/neudrive-backup.git",
+				"permissions":    permissions,
+				"owner": map[string]any{
+					"login": login,
+					"type":  "User",
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/user/repos":
+			var body struct {
+				Name    string `json:"name"`
+				Private bool   `json:"private"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Name != "neudrive-backup" || !body.Private {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"message":"unexpected repo create request"}`))
+				return
+			}
+			state.mu.Lock()
+			state.repoExists = true
+			state.createCount++
+			permissions := state.permissionFlags()
+			state.mu.Unlock()
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":           "neudrive-backup",
+				"full_name":      login + "/neudrive-backup",
+				"default_branch": "main",
+				"clone_url":      "https://github.com/" + login + "/neudrive-backup.git",
+				"permissions":    permissions,
+				"owner": map[string]any{
+					"login": login,
+					"type":  "User",
+				},
 			})
 		default:
 			w.WriteHeader(http.StatusNotFound)

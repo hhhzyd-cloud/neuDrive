@@ -30,7 +30,8 @@ func (r *PostgresRepo) GetActiveLocalGitMirror(ctx context.Context, userID uuid.
 	err := r.db.QueryRow(ctx,
 		`SELECT user_id, root_path, is_active, execution_mode, sync_state, auto_commit_enabled, auto_push_enabled, auth_mode, remote_name,
 		        remote_url, remote_branch, git_initialized_at, last_synced_at, last_error, last_commit_at,
-		        last_commit_hash, last_push_at, last_push_error, sync_requested_at, sync_started_at,
+		        last_commit_hash, last_push_at, last_push_error, remote_conflict, force_remote_overwrite,
+		        sync_requested_at, sync_started_at,
 		        sync_next_attempt_at, sync_attempt_count, github_token_verified_at, github_token_login,
 		        github_repo_permission, github_app_user_login, github_app_user_authorized_at,
 		        github_app_user_refresh_expires_at, created_at, updated_at
@@ -57,6 +58,8 @@ func (r *PostgresRepo) GetActiveLocalGitMirror(ctx context.Context, userID uuid.
 		&mirror.LastCommitHash,
 		&mirror.LastPushAt,
 		&mirror.LastPushError,
+		&mirror.RemoteConflict,
+		&mirror.ForceRemoteOverwrite,
 		&mirror.SyncRequestedAt,
 		&mirror.SyncStartedAt,
 		&mirror.SyncNextAttemptAt,
@@ -94,12 +97,12 @@ func (r *PostgresRepo) UpsertActiveLocalGitMirror(ctx context.Context, mirror mo
 		`INSERT INTO local_git_mirrors (
 			user_id, root_path, is_active, execution_mode, sync_state, auto_commit_enabled, auto_push_enabled,
 			auth_mode, remote_name, remote_url, remote_branch, git_initialized_at, last_synced_at, last_error,
-			last_commit_at, last_commit_hash, last_push_at, last_push_error, sync_requested_at, sync_started_at,
-			sync_next_attempt_at, sync_attempt_count, github_token_verified_at, github_token_login,
+			last_commit_at, last_commit_hash, last_push_at, last_push_error, remote_conflict, force_remote_overwrite,
+			sync_requested_at, sync_started_at, sync_next_attempt_at, sync_attempt_count, github_token_verified_at, github_token_login,
 			github_repo_permission, github_app_user_login, github_app_user_authorized_at,
 			github_app_user_refresh_expires_at, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
 		ON CONFLICT (user_id) DO UPDATE SET
 			root_path = EXCLUDED.root_path,
 			is_active = EXCLUDED.is_active,
@@ -118,6 +121,8 @@ func (r *PostgresRepo) UpsertActiveLocalGitMirror(ctx context.Context, mirror mo
 			last_commit_hash = EXCLUDED.last_commit_hash,
 			last_push_at = EXCLUDED.last_push_at,
 			last_push_error = EXCLUDED.last_push_error,
+			remote_conflict = EXCLUDED.remote_conflict,
+			force_remote_overwrite = EXCLUDED.force_remote_overwrite,
 			sync_requested_at = EXCLUDED.sync_requested_at,
 			sync_started_at = EXCLUDED.sync_started_at,
 			sync_next_attempt_at = EXCLUDED.sync_next_attempt_at,
@@ -147,6 +152,8 @@ func (r *PostgresRepo) UpsertActiveLocalGitMirror(ctx context.Context, mirror mo
 		mirror.LastCommitHash,
 		mirror.LastPushAt,
 		mirror.LastPushError,
+		mirror.RemoteConflict,
+		mirror.ForceRemoteOverwrite,
 		mirror.SyncRequestedAt,
 		mirror.SyncStartedAt,
 		mirror.SyncNextAttemptAt,

@@ -2,13 +2,11 @@ package localgitsync
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +15,6 @@ import (
 	"github.com/agi-bar/neudrive/internal/runtimecfg"
 	"github.com/agi-bar/neudrive/internal/services"
 	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/systemskills"
 	"github.com/agi-bar/neudrive/internal/vault"
 	"github.com/google/uuid"
 )
@@ -149,7 +146,7 @@ func (s *Service) RegisterMirrorAndSync(ctx context.Context, userID uuid.UUID, o
 	return s.buildSyncInfo(ctx, userID, mirror, true, false, false, false), nil
 }
 
-func (s *Service) SyncActiveMirror(ctx context.Context, userID uuid.UUID) (*SyncInfo, error) {
+func (s *Service) SyncActiveMirror(ctx context.Context, userID uuid.UUID, forceRemoteOverwrite bool) (*SyncInfo, error) {
 	if s == nil || s.mirrors == nil {
 		return nil, nil
 	}
@@ -163,6 +160,11 @@ func (s *Service) SyncActiveMirror(ctx context.Context, userID uuid.UUID) (*Sync
 
 	mirror := normalizeMirror(active)
 	mirror.ExecutionMode = s.configuredExecutionMode()
+	if forceRemoteOverwrite {
+		mirror.ForceRemoteOverwrite = true
+		mirror.RemoteConflict = false
+		mirror.LastPushError = ""
+	}
 	syncedAt := time.Now().UTC()
 	gitInitializedAt, syncErr := s.syncIntoRoot(ctx, userID, mirror.RootPath, syncedAt, &mirror)
 	mirror.GitInitializedAt = gitInitializedAt
@@ -211,7 +213,7 @@ func (s *Service) syncIntoRoot(
 	if err := s.writeFileTree(ctx, userID, rootPath); err != nil {
 		return nil, err
 	}
-	if err := s.writeSidecars(ctx, userID, rootPath, syncedAt); err != nil {
+	if err := writeTextFile(filepath.Join(rootPath, readmePath), buildREADME(rootPath)); err != nil {
 		return nil, err
 	}
 	gitInitializedAt, err := ensureGitRepo(ctx, rootPath, existing)
@@ -222,132 +224,64 @@ func (s *Service) syncIntoRoot(
 }
 
 func (s *Service) writeFileTree(ctx context.Context, userID uuid.UUID, rootPath string) error {
-	snapshot, err := s.fileTree.Snapshot(ctx, userID, "/", models.TrustLevelFull)
+	return s.writeFileTreeDir(ctx, userID, rootPath, "/", map[string]bool{})
+}
+
+func (s *Service) writeFileTreeDir(ctx context.Context, userID uuid.UUID, rootPath, dirPath string, visited map[string]bool) error {
+	dirPath = hubpath.NormalizePublic(dirPath)
+	if visited[dirPath] {
+		return nil
+	}
+	visited[dirPath] = true
+
+	entries, err := s.fileTree.List(ctx, userID, dirPath, models.TrustLevelFull)
 	if err != nil && err != services.ErrEntryNotFound {
 		return err
 	}
-	if snapshot == nil {
+	if len(entries) == 0 {
 		return nil
 	}
-	for _, entry := range snapshot.Entries {
-		if entry.IsDirectory || systemskills.IsProtectedPath(entry.Path) {
+	for _, entry := range entries {
+		entry.Path = hubpath.NormalizePublic(entry.Path)
+		if entry.Path == "" || entry.Path == "/" {
 			continue
 		}
-		relativePath := strings.TrimPrefix(hubpath.NormalizePublic(entry.Path), "/")
-		if relativePath == "" {
-			continue
-		}
-		target := filepath.Join(rootPath, filepath.FromSlash(relativePath))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		if isBinaryEntry(entry.Metadata) {
-			data, _, err := s.fileTree.ReadBinary(ctx, userID, entry.Path, models.TrustLevelFull)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(target, data, 0o644); err != nil {
+		if entry.IsDirectory {
+			if err := s.writeFileTreeDir(ctx, userID, rootPath, entry.Path, visited); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.WriteFile(target, []byte(entry.Content), 0o644); err != nil {
+		if err := s.writeFileTreeEntry(ctx, userID, rootPath, entry); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) writeSidecars(ctx context.Context, userID uuid.UUID, rootPath string, syncedAt time.Time) error {
-	user, err := s.users.GetByID(ctx, userID)
-	if err == nil && user != nil {
-		if err := writeJSONFile(filepath.Join(rootPath, "identity", "profile.json"), map[string]any{
-			"id":           user.ID.String(),
-			"slug":         user.Slug,
-			"display_name": user.DisplayName,
-			"email":        user.Email,
-			"timezone":     user.Timezone,
-			"language":     user.Language,
-			"created_at":   user.CreatedAt.UTC().Format(time.RFC3339),
-			"updated_at":   user.UpdatedAt.UTC().Format(time.RFC3339),
-		}); err != nil {
-			return err
-		}
+func (s *Service) writeFileTreeEntry(ctx context.Context, userID uuid.UUID, rootPath string, entry models.FileTreeEntry) error {
+	relativePath := strings.TrimPrefix(hubpath.NormalizePublic(entry.Path), "/")
+	if relativePath == "" {
+		return nil
 	}
-	if s.connections != nil {
-		connections, err := s.connections.ListByUser(ctx, userID)
-		if err == nil {
-			sanitized := make([]map[string]any, 0, len(connections))
-			for _, connection := range connections {
-				item := map[string]any{
-					"id":             connection.ID.String(),
-					"name":           connection.Name,
-					"platform":       connection.Platform,
-					"trust_level":    connection.TrustLevel,
-					"api_key_prefix": connection.APIKeyPrefix,
-					"config":         connection.Config,
-					"created_at":     connection.CreatedAt.UTC().Format(time.RFC3339),
-					"updated_at":     connection.UpdatedAt.UTC().Format(time.RFC3339),
-				}
-				if connection.LastUsedAt != nil {
-					item["last_used_at"] = connection.LastUsedAt.UTC().Format(time.RFC3339)
-				}
-				sanitized = append(sanitized, item)
-			}
-			if err := writeJSONFile(filepath.Join(rootPath, "connections", "connections.json"), sanitized); err != nil {
-				return err
-			}
-		}
-	}
-	if s.vault != nil {
-		scopes, err := s.vault.ListScopes(ctx, userID, models.TrustLevelFull)
-		if err == nil {
-			exported := make([]map[string]any, 0, len(scopes))
-			for _, scope := range scopes {
-				exported = append(exported, map[string]any{
-					"scope":           scope.Scope,
-					"description":     scope.Description,
-					"min_trust_level": scope.MinTrustLevel,
-					"created_at":      scope.CreatedAt.UTC().Format(time.RFC3339),
-				})
-			}
-			if err := writeJSONFile(filepath.Join(rootPath, "vault", "scopes.json"), exported); err != nil {
-				return err
-			}
-		}
-	}
-	if s.projects != nil {
-		projects, err := s.projects.List(ctx, userID)
-		if err == nil {
-			exported := make([]map[string]any, 0, len(projects))
-			for _, project := range projects {
-				exported = append(exported, map[string]any{
-					"id":         project.ID.String(),
-					"name":       project.Name,
-					"status":     project.Status,
-					"metadata":   project.Metadata,
-					"created_at": project.CreatedAt.UTC().Format(time.RFC3339),
-					"updated_at": project.UpdatedAt.UTC().Format(time.RFC3339),
-				})
-			}
-			sort.Slice(exported, func(i, j int) bool {
-				return fmt.Sprint(exported[i]["name"]) < fmt.Sprint(exported[j]["name"])
-			})
-			if err := writeJSONFile(filepath.Join(rootPath, "_neudrive", "projects.json"), exported); err != nil {
-				return err
-			}
-		}
-	}
-	if err := writeJSONFile(filepath.Join(rootPath, "_neudrive", "metadata.json"), map[string]any{
-		"version":        "1.0",
-		"exported_at":    syncedAt.UTC().Format(time.RFC3339),
-		"last_synced_at": syncedAt.UTC().Format(time.RFC3339),
-		"root_path":      rootPath,
-		"mode":           "local_git_mirror",
-	}); err != nil {
+	target := filepath.Join(rootPath, filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	return writeTextFile(filepath.Join(rootPath, readmePath), buildREADME(rootPath))
+	if isBinaryEntry(entry.Metadata) {
+		data, _, err := s.fileTree.ReadBinary(ctx, userID, entry.Path, models.TrustLevelFull)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := os.WriteFile(target, []byte(entry.Content), 0o644); err != nil {
+		return err
+	}
+	return nil
 }
 
 func resolveMirrorRoot(outputRoot string) (string, error) {
@@ -440,15 +374,6 @@ func scrubGitEnv(env []string) []string {
 	return clean
 }
 
-func writeJSONFile(path string, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	return writeBytes(path, data)
-}
-
 func writeTextFile(path, content string) error {
 	return writeBytes(path, []byte(content))
 }
@@ -464,20 +389,11 @@ func buildREADME(rootPath string) string {
 	lines := []string{
 		"# NeuDrive Local Git Mirror",
 		"",
-		"This directory is a local Git mirror of your NeuDrive data.",
+		"This repository mirrors the user-visible NeuDrive file tree for this account.",
 		"",
+		"- Files are written with the same paths shown in NeuDrive, such as `skills/...` and `memory/...`.",
+		"- Internal account metadata, connection records, and vault scopes are not exported here.",
 		"- Secrets are not exported.",
-		"- Vault scope metadata is available in `vault/scopes.json`.",
-		"- Mirror metadata is available in `_neudrive/metadata.json`.",
-		"",
-		"To sync this mirror to GitHub, run these commands in this directory:",
-		"",
-		"```bash",
-		"git add .",
-		"git commit -m \"Update NeuDrive mirror\"",
-		"git remote add origin <your-repo-url>",
-		"git push -u origin main",
-		"```",
 		"",
 		"Current mirror root: " + rootPath,
 		"",
@@ -491,26 +407,28 @@ func buildFailureInfo(mirror models.LocalGitMirror, err error) *SyncInfo {
 		path = ""
 	}
 	info := &SyncInfo{
-		Enabled:           true,
-		Path:              path,
-		ExecutionMode:     mirror.ExecutionMode,
-		SyncState:         mirror.SyncState,
-		SyncRequestedAt:   formatOptionalTime(mirror.SyncRequestedAt),
-		SyncStartedAt:     formatOptionalTime(mirror.SyncStartedAt),
-		SyncNextAttemptAt: formatOptionalTime(mirror.SyncNextAttemptAt),
-		SyncAttemptCount:  mirror.SyncAttemptCount,
-		Synced:            false,
-		LastSyncedAt:      formatOptionalTime(mirror.LastSyncedAt),
-		LastError:         err.Error(),
-		AutoCommitEnabled: mirror.AutoCommitEnabled,
-		AutoPushEnabled:   mirror.AutoPushEnabled,
-		AuthMode:          mirror.AuthMode,
-		RemoteName:        mirror.RemoteName,
-		RemoteBranch:      mirror.RemoteBranch,
-		LastCommitAt:      formatOptionalTime(mirror.LastCommitAt),
-		LastCommitHash:    strings.TrimSpace(mirror.LastCommitHash),
-		LastPushAt:        formatOptionalTime(mirror.LastPushAt),
-		LastPushError:     strings.TrimSpace(mirror.LastPushError),
+		Enabled:              true,
+		Path:                 path,
+		ExecutionMode:        mirror.ExecutionMode,
+		SyncState:            mirror.SyncState,
+		SyncRequestedAt:      formatOptionalTime(mirror.SyncRequestedAt),
+		SyncStartedAt:        formatOptionalTime(mirror.SyncStartedAt),
+		SyncNextAttemptAt:    formatOptionalTime(mirror.SyncNextAttemptAt),
+		SyncAttemptCount:     mirror.SyncAttemptCount,
+		Synced:               false,
+		LastSyncedAt:         formatOptionalTime(mirror.LastSyncedAt),
+		LastError:            err.Error(),
+		AutoCommitEnabled:    mirror.AutoCommitEnabled,
+		AutoPushEnabled:      mirror.AutoPushEnabled,
+		AuthMode:             mirror.AuthMode,
+		RemoteName:           mirror.RemoteName,
+		RemoteBranch:         mirror.RemoteBranch,
+		LastCommitAt:         formatOptionalTime(mirror.LastCommitAt),
+		LastCommitHash:       strings.TrimSpace(mirror.LastCommitHash),
+		LastPushAt:           formatOptionalTime(mirror.LastPushAt),
+		LastPushError:        strings.TrimSpace(mirror.LastPushError),
+		RemoteConflict:       mirror.RemoteConflict,
+		ForceRemoteOverwrite: mirror.ForceRemoteOverwrite,
 	}
 	if path != "" {
 		info.Message = fmt.Sprintf("Git Mirror 同步失败: %s。目录: %s。", err.Error(), path)
@@ -526,30 +444,32 @@ func (s *Service) buildSyncInfo(_ context.Context, _ uuid.UUID, mirror models.Lo
 		path = ""
 	}
 	info := &SyncInfo{
-		Enabled:           true,
-		Path:              path,
-		ExecutionMode:     mirror.ExecutionMode,
-		SyncState:         mirror.SyncState,
-		SyncRequestedAt:   formatOptionalTime(mirror.SyncRequestedAt),
-		SyncStartedAt:     formatOptionalTime(mirror.SyncStartedAt),
-		SyncNextAttemptAt: formatOptionalTime(mirror.SyncNextAttemptAt),
-		SyncAttemptCount:  mirror.SyncAttemptCount,
-		Synced:            synced,
-		LastSyncedAt:      formatOptionalTime(mirror.LastSyncedAt),
-		LastError:         strings.TrimSpace(mirror.LastError),
-		AutoCommitEnabled: mirror.AutoCommitEnabled,
-		AutoPushEnabled:   mirror.AutoPushEnabled,
-		AuthMode:          mirror.AuthMode,
-		RemoteName:        mirror.RemoteName,
-		RemoteBranch:      mirror.RemoteBranch,
-		LastCommitAt:      formatOptionalTime(mirror.LastCommitAt),
-		LastCommitHash:    strings.TrimSpace(mirror.LastCommitHash),
-		LastPushAt:        formatOptionalTime(mirror.LastPushAt),
-		LastPushError:     strings.TrimSpace(mirror.LastPushError),
-		CommitCreated:     commitCreated,
-		PushAttempted:     pushAttempted,
-		PushSucceeded:     pushSucceeded,
-		Message:           mirrorSummaryMessage(mirror, commitCreated, pushAttempted, pushSucceeded),
+		Enabled:              true,
+		Path:                 path,
+		ExecutionMode:        mirror.ExecutionMode,
+		SyncState:            mirror.SyncState,
+		SyncRequestedAt:      formatOptionalTime(mirror.SyncRequestedAt),
+		SyncStartedAt:        formatOptionalTime(mirror.SyncStartedAt),
+		SyncNextAttemptAt:    formatOptionalTime(mirror.SyncNextAttemptAt),
+		SyncAttemptCount:     mirror.SyncAttemptCount,
+		Synced:               synced,
+		LastSyncedAt:         formatOptionalTime(mirror.LastSyncedAt),
+		LastError:            strings.TrimSpace(mirror.LastError),
+		AutoCommitEnabled:    mirror.AutoCommitEnabled,
+		AutoPushEnabled:      mirror.AutoPushEnabled,
+		AuthMode:             mirror.AuthMode,
+		RemoteName:           mirror.RemoteName,
+		RemoteBranch:         mirror.RemoteBranch,
+		LastCommitAt:         formatOptionalTime(mirror.LastCommitAt),
+		LastCommitHash:       strings.TrimSpace(mirror.LastCommitHash),
+		LastPushAt:           formatOptionalTime(mirror.LastPushAt),
+		LastPushError:        strings.TrimSpace(mirror.LastPushError),
+		RemoteConflict:       mirror.RemoteConflict,
+		ForceRemoteOverwrite: mirror.ForceRemoteOverwrite,
+		CommitCreated:        commitCreated,
+		PushAttempted:        pushAttempted,
+		PushSucceeded:        pushSucceeded,
+		Message:              mirrorSummaryMessage(mirror, commitCreated, pushAttempted, pushSucceeded),
 	}
 	return info
 }

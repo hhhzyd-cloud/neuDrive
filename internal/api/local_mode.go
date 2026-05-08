@@ -70,7 +70,7 @@ func (s *Server) handleAgentSyncLocalGitMirror(w http.ResponseWriter, r *http.Re
 		return
 	}
 	userID, _ := userIDFromCtx(r.Context())
-	info, err := s.LocalGitSync.SyncActiveMirror(r.Context(), userID)
+	info, err := s.LocalGitSync.SyncActiveMirror(r.Context(), userID, false)
 	if err != nil && info == nil {
 		respondInternalError(w, err)
 		return

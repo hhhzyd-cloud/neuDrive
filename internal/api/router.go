@@ -330,6 +330,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/api/git-mirror/github-app/disconnect", s.handleGitMirrorGitHubAppDisconnect)
 		r.Get("/api/git-mirror/github-app/repos", s.handleGitMirrorGitHubAppReposList)
 		r.Post("/api/git-mirror/github-app/repos", s.handleGitMirrorGitHubAppReposCreate)
+		r.Post("/api/git-mirror/github-app/default-backup-repo", s.handleGitMirrorGitHubAppDefaultBackupRepo)
 
 		// Local Git mirror settings
 		r.Get("/api/local/config", s.handleLocalConfigGet)
@@ -740,12 +741,13 @@ func (s *Server) healthCheck(w http.ResponseWriter, r *http.Request) {
 // handlePublicConfig returns non-sensitive configuration for the frontend.
 func (s *Server) handlePublicConfig(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]interface{}{
-		"github_client_id":        s.GitHubClientID,
-		"github_enabled":          s.GitHubClientID != "",
-		"github_app_enabled":      s.GitHubAppClientID != "",
-		"github_app_slug":         s.GitHubAppSlug,
-		"billing_enabled":         s.billingEnabled(),
-		"system_settings_enabled": s.systemSettingsEnabled(),
+		"github_client_id":                        s.GitHubClientID,
+		"github_enabled":                          s.GitHubClientID != "",
+		"github_app_enabled":                      s.GitHubAppClientID != "",
+		"github_app_slug":                         s.GitHubAppSlug,
+		"billing_enabled":                         s.billingEnabled(),
+		"system_settings_enabled":                 s.systemSettingsEnabled(),
+		"git_mirror_manual_sync_cooldown_seconds": s.gitMirrorManualSyncCooldownSeconds(),
 	}
 	if s.Storage != "" {
 		payload["storage"] = s.Storage

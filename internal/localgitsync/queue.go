@@ -11,17 +11,17 @@ import (
 
 var hostedRetryBackoff = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute}
 
-func (s *Service) QueueOrSyncActiveMirror(ctx context.Context, userID uuid.UUID, reason string) (*SyncInfo, error) {
+func (s *Service) QueueOrSyncActiveMirror(ctx context.Context, userID uuid.UUID, reason string, forceRemoteOverwrite bool) (*SyncInfo, error) {
 	if s == nil || s.mirrors == nil {
 		return nil, nil
 	}
 	if s.isHostedExecution() {
-		return s.MarkMirrorQueued(ctx, userID, reason)
+		return s.MarkMirrorQueued(ctx, userID, reason, forceRemoteOverwrite)
 	}
-	return s.SyncActiveMirror(ctx, userID)
+	return s.SyncActiveMirror(ctx, userID, forceRemoteOverwrite)
 }
 
-func (s *Service) MarkMirrorQueued(ctx context.Context, userID uuid.UUID, _ string) (*SyncInfo, error) {
+func (s *Service) MarkMirrorQueued(ctx context.Context, userID uuid.UUID, _ string, forceRemoteOverwrite bool) (*SyncInfo, error) {
 	active, err := s.mirrors.GetActiveLocalGitMirror(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -35,6 +35,11 @@ func (s *Service) MarkMirrorQueued(ctx context.Context, userID uuid.UUID, _ stri
 	}
 	now := time.Now().UTC()
 	mirror.ExecutionMode = s.configuredExecutionMode()
+	if forceRemoteOverwrite {
+		mirror.ForceRemoteOverwrite = true
+		mirror.RemoteConflict = false
+		mirror.LastPushError = ""
+	}
 	mirror.SyncRequestedAt = &now
 	mirror.SyncNextAttemptAt = nil
 	if mirror.SyncState != SyncStateRunning {
@@ -79,7 +84,7 @@ func (s *Service) runQueuedMirror(ctx context.Context, userID uuid.UUID) error {
 		return err
 	}
 	mirror := normalizeMirror(active)
-	_, syncErr := s.SyncActiveMirror(ctx, userID)
+	_, syncErr := s.SyncActiveMirror(ctx, userID, false)
 	current, err := s.mirrors.GetActiveLocalGitMirror(ctx, userID)
 	if err != nil || current == nil {
 		return err

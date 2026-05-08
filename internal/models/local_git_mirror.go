@@ -25,6 +25,8 @@ type LocalGitMirror struct {
 	LastCommitHash            string     `json:"last_commit_hash,omitempty"`
 	LastPushAt                *time.Time `json:"last_push_at,omitempty"`
 	LastPushError             string     `json:"last_push_error,omitempty"`
+	RemoteConflict            bool       `json:"remote_conflict,omitempty"`
+	ForceRemoteOverwrite      bool       `json:"force_remote_overwrite,omitempty"`
 	SyncRequestedAt           *time.Time `json:"sync_requested_at,omitempty"`
 	SyncStartedAt             *time.Time `json:"sync_started_at,omitempty"`
 	SyncNextAttemptAt         *time.Time `json:"sync_next_attempt_at,omitempty"`

@@ -50,7 +50,7 @@ func TestHostedQueuedMirrorSyncProcessesQueuedRows(t *testing.T) {
 	if _, err := store.WriteEntry(ctx, user.ID, "/notes/demo.md", "queued", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
 		t.Fatalf("WriteEntry: %v", err)
 	}
-	if info, err := svc.MarkMirrorQueued(ctx, user.ID, "write"); err != nil {
+	if info, err := svc.MarkMirrorQueued(ctx, user.ID, "write", false); err != nil {
 		t.Fatalf("MarkMirrorQueued: %v", err)
 	} else if info == nil || info.SyncState != SyncStateQueued {
 		t.Fatalf("expected queued sync info, got %+v", info)
@@ -116,7 +116,7 @@ func TestHostedQueuedMirrorClaimAllowsSingleRunner(t *testing.T) {
 	if _, err := store.WriteEntry(ctx, user.ID, "/notes/demo.md", "queued", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
 		t.Fatalf("WriteEntry: %v", err)
 	}
-	if _, err := svc.MarkMirrorQueued(ctx, user.ID, "write"); err != nil {
+	if _, err := svc.MarkMirrorQueued(ctx, user.ID, "write", false); err != nil {
 		t.Fatalf("MarkMirrorQueued: %v", err)
 	}
 

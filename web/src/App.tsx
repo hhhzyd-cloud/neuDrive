@@ -1,6 +1,6 @@
 import { Component, Suspense, lazy, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, BILLING_REDIRECT_EVENT, type BillingRedirectDetail, type BillingStatus, type DashboardStats, type PublicConfig } from './api'
+import { api, BILLING_REDIRECT_EVENT, type BillingRedirectDetail, type BillingStatus, type PublicConfig } from './api'
 import LanguageToggle from './components/LanguageToggle'
 import GitHubRepoLink from './components/GitHubRepoLink'
 import { useI18n } from './i18n'
@@ -91,18 +91,6 @@ class RouteErrorBoundary extends Component<{ children: ReactNode; fallback: Reac
   }
 }
 
-const emptyStats: DashboardStats = {
-  connections: 0,
-  files: 0,
-  projects: 0,
-  conversations: 0,
-  skills: 0,
-  memory: 0,
-  profile: 0,
-  weekly_activity: [],
-  pending: [],
-}
-
 function LegacyOnboardingRedirect() {
   const { platform } = useParams()
   if (platform === 'codex' || platform === 'gemini' || platform === 'claude-code') return <Navigate to="/setup/cli" replace />
@@ -131,7 +119,6 @@ function LegacyDataFilesRedirect() {
 function App() {
   const [user, setUser] = useState<any>(null)
   const [publicConfig, setPublicConfig] = useState<PublicConfig>({})
-  const [shellStats, setShellStats] = useState<DashboardStats>(emptyStats)
   const [shellBilling, setShellBilling] = useState<BillingStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -240,13 +227,16 @@ function App() {
     if (!user) return
     let cancelled = false
     const loadShellState = async () => {
-      const [statsResult, billingResult] = await Promise.allSettled([
-        api.getStats(),
-        billingEnabled ? api.getBillingStatus() : Promise.resolve(null),
-      ])
-      if (cancelled) return
-      if (statsResult.status === 'fulfilled') setShellStats(statsResult.value)
-      if (billingResult.status === 'fulfilled') setShellBilling(billingResult.value)
+      if (!billingEnabled) {
+        setShellBilling(null)
+        return
+      }
+      try {
+        const billing = await api.getBillingStatus()
+        if (!cancelled) setShellBilling(billing)
+      } catch {
+        // Billing status is optional shell chrome; the billing page will surface detailed errors.
+      }
     }
     void loadShellState()
     return () => {
@@ -392,7 +382,7 @@ function App() {
     )
   }
 
-  const hasConnection = shellStats.connections > 0
+  const showGitHubBackup = localMode || !!publicConfig?.github_enabled || !!publicConfig?.github_app_enabled
   const showUpgrade = billingEnabled && (!shellBilling || shellBilling.current_plan === 'free')
   const isSyncLoginRoute = location.pathname === '/sync/login'
   const isLegacySyncLoginRoute =
@@ -436,7 +426,7 @@ function App() {
             </NavLink>
           )}
 
-          {hasConnection && (
+          {showGitHubBackup && (
             <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
               <span className="nav-icon">↕</span>
               <span>{tx('GitHub 备份', 'GitHub Backup')}</span>

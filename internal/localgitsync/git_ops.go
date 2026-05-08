@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const remoteConflictPushBlockedMessage = "Remote has commits that are not in this neuDrive mirror. Review the remote changes, then confirm overwrite to push with force-with-lease."
+
 func (s *Service) finalizeMirrorRepo(ctx context.Context, userID uuid.UUID, mirror *models.LocalGitMirror) (repoSyncResult, error) {
 	if mirror == nil {
 		return repoSyncResult{}, fmt.Errorf("missing mirror configuration")
@@ -75,8 +77,23 @@ func (s *Service) finalizeMirrorRepo(ctx context.Context, userID uuid.UUID, mirr
 			return result, err
 		}
 		result.pushAttempted = true
-		if err := gitPushWithToken(ctx, mirror.RootPath, mirror.RemoteName, mirror.RemoteBranch, pushToken); err != nil {
+		blocked, expectedRemoteHead := prepareRemotePush(ctx, mirror, pushToken)
+		if blocked {
+			return result, nil
+		}
+		if mirror.ForceRemoteOverwrite && expectedRemoteHead != "" {
+			if err := gitPushForceWithLeaseWithToken(ctx, mirror.RootPath, mirror.RemoteName, mirror.RemoteBranch, expectedRemoteHead, pushToken); err != nil {
+				mirror.ForceRemoteOverwrite = false
+				mirror.RemoteConflict = true
+				mirror.LastPushError = fmt.Sprintf("Force overwrite failed; the remote may have changed again. %s", err.Error())
+				return result, nil
+			}
+		} else if err := gitPushWithToken(ctx, mirror.RootPath, mirror.RemoteName, mirror.RemoteBranch, pushToken); err != nil {
+			mirror.ForceRemoteOverwrite = false
 			mirror.LastPushError = err.Error()
+			if isNonFastForwardPushError(err) {
+				mirror.RemoteConflict = true
+			}
 			return result, nil
 		}
 	default:
@@ -84,8 +101,23 @@ func (s *Service) finalizeMirrorRepo(ctx context.Context, userID uuid.UUID, mirr
 			return result, err
 		}
 		result.pushAttempted = true
-		if err := gitPush(ctx, mirror.RootPath, mirror.RemoteName, mirror.RemoteBranch); err != nil {
+		blocked, expectedRemoteHead := prepareRemotePush(ctx, mirror, "")
+		if blocked {
+			return result, nil
+		}
+		if mirror.ForceRemoteOverwrite && expectedRemoteHead != "" {
+			if err := gitPushForceWithLease(ctx, mirror.RootPath, mirror.RemoteName, mirror.RemoteBranch, expectedRemoteHead); err != nil {
+				mirror.ForceRemoteOverwrite = false
+				mirror.RemoteConflict = true
+				mirror.LastPushError = fmt.Sprintf("Force overwrite failed; the remote may have changed again. %s", err.Error())
+				return result, nil
+			}
+		} else if err := gitPush(ctx, mirror.RootPath, mirror.RemoteName, mirror.RemoteBranch); err != nil {
+			mirror.ForceRemoteOverwrite = false
 			mirror.LastPushError = err.Error()
+			if isNonFastForwardPushError(err) {
+				mirror.RemoteConflict = true
+			}
 			return result, nil
 		}
 	}
@@ -93,8 +125,54 @@ func (s *Service) finalizeMirrorRepo(ctx context.Context, userID uuid.UUID, mirr
 	now := time.Now().UTC()
 	mirror.LastPushAt = &now
 	mirror.LastPushError = ""
+	mirror.RemoteConflict = false
+	mirror.ForceRemoteOverwrite = false
 	result.pushSucceeded = true
 	return result, nil
+}
+
+func prepareRemotePush(ctx context.Context, mirror *models.LocalGitMirror, token string) (bool, string) {
+	if mirror == nil {
+		return true, ""
+	}
+	remoteHead, remoteMissing, err := fetchAndResolveRemoteHead(ctx, mirror.RootPath, mirror.RemoteName, mirror.RemoteBranch, token)
+	if err != nil {
+		mirror.ForceRemoteOverwrite = false
+		mirror.LastPushError = err.Error()
+		return true, ""
+	}
+	if remoteMissing || strings.TrimSpace(remoteHead) == "" {
+		mirror.RemoteConflict = false
+		return false, ""
+	}
+	localHead, err := gitRevParse(ctx, mirror.RootPath, "HEAD")
+	if err != nil {
+		mirror.ForceRemoteOverwrite = false
+		mirror.LastPushError = err.Error()
+		return true, remoteHead
+	}
+	if strings.TrimSpace(localHead) == strings.TrimSpace(remoteHead) {
+		mirror.RemoteConflict = false
+		return false, remoteHead
+	}
+	remoteIsAncestor, err := gitIsAncestor(ctx, mirror.RootPath, remoteHead, localHead)
+	if err != nil {
+		mirror.ForceRemoteOverwrite = false
+		mirror.LastPushError = err.Error()
+		return true, remoteHead
+	}
+	if remoteIsAncestor {
+		mirror.RemoteConflict = false
+		return false, remoteHead
+	}
+	if mirror.ForceRemoteOverwrite {
+		mirror.RemoteConflict = false
+		return false, remoteHead
+	}
+	mirror.ForceRemoteOverwrite = false
+	mirror.RemoteConflict = true
+	mirror.LastPushError = remoteConflictPushBlockedMessage
+	return true, remoteHead
 }
 
 func gitWorkTreeDirty(ctx context.Context, rootPath string) (bool, error) {
@@ -148,11 +226,130 @@ func gitPush(ctx context.Context, rootPath, remoteName, remoteBranch string) err
 }
 
 func gitPushWithToken(ctx context.Context, rootPath, remoteName, remoteBranch, token string) error {
+	args := append(gitCredentialHelperArgs(), "push", remoteName, "HEAD:"+remoteBranch)
 	_, err := runGitCommand(ctx, rootPath, map[string]string{
 		"NEUDRIVE_GITHUB_TOKEN": token,
 		"GIT_TERMINAL_PROMPT":   "0",
-	}, "-c", "credential.helper=", "-c", "credential.helper=!f() { echo username=x-access-token; echo password=$NEUDRIVE_GITHUB_TOKEN; }; f", "push", remoteName, "HEAD:"+remoteBranch)
+	}, args...)
 	return err
+}
+
+func gitPushForceWithLease(ctx context.Context, rootPath, remoteName, remoteBranch, expectedRemoteHead string) error {
+	_, err := runGitCommand(ctx, rootPath, map[string]string{
+		"GIT_TERMINAL_PROMPT": "0",
+	}, "push", "--force-with-lease=refs/heads/"+remoteBranch+":"+expectedRemoteHead, remoteName, "HEAD:"+remoteBranch)
+	return err
+}
+
+func gitPushForceWithLeaseWithToken(ctx context.Context, rootPath, remoteName, remoteBranch, expectedRemoteHead, token string) error {
+	args := append(gitCredentialHelperArgs(), "push", "--force-with-lease=refs/heads/"+remoteBranch+":"+expectedRemoteHead, remoteName, "HEAD:"+remoteBranch)
+	_, err := runGitCommand(ctx, rootPath, map[string]string{
+		"NEUDRIVE_GITHUB_TOKEN": token,
+		"GIT_TERMINAL_PROMPT":   "0",
+	}, args...)
+	return err
+}
+
+func fetchAndResolveRemoteHead(ctx context.Context, rootPath, remoteName, remoteBranch, token string) (string, bool, error) {
+	if strings.TrimSpace(token) == "" {
+		if err := gitFetchBranch(ctx, rootPath, remoteName, remoteBranch); err != nil {
+			if isMissingRemoteBranchError(err) {
+				return "", true, nil
+			}
+			return "", false, err
+		}
+	} else if err := gitFetchBranchWithToken(ctx, rootPath, remoteName, remoteBranch, token); err != nil {
+		if isMissingRemoteBranchError(err) {
+			return "", true, nil
+		}
+		return "", false, err
+	}
+	remoteHead, err := gitRevParse(ctx, rootPath, remoteTrackingRef(remoteName, remoteBranch))
+	if err != nil {
+		if isBadRevisionError(err) {
+			return "", true, nil
+		}
+		return "", false, err
+	}
+	return remoteHead, false, nil
+}
+
+func gitFetchBranch(ctx context.Context, rootPath, remoteName, remoteBranch string) error {
+	_, err := runGitCommand(ctx, rootPath, map[string]string{
+		"GIT_TERMINAL_PROMPT": "0",
+	}, "fetch", "--prune", remoteName, remoteBranch)
+	return err
+}
+
+func gitFetchBranchWithToken(ctx context.Context, rootPath, remoteName, remoteBranch, token string) error {
+	args := append(gitCredentialHelperArgs(), "fetch", "--prune", remoteName, remoteBranch)
+	_, err := runGitCommand(ctx, rootPath, map[string]string{
+		"NEUDRIVE_GITHUB_TOKEN": token,
+		"GIT_TERMINAL_PROMPT":   "0",
+	}, args...)
+	return err
+}
+
+func gitRevParse(ctx context.Context, rootPath, revision string) (string, error) {
+	return runGitCommand(ctx, rootPath, nil, "rev-parse", "--verify", revision)
+}
+
+func gitIsAncestor(ctx context.Context, rootPath, ancestor, descendant string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", rootPath, "merge-base", "--is-ancestor", ancestor, descendant)
+	cmd.Env = gitCommandEnv(nil)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	if _, ok := err.(*exec.ExitError); ok {
+		if strings.TrimSpace(string(output)) == "" {
+			return false, nil
+		}
+		return false, fmt.Errorf("git merge-base --is-ancestor failed: %s", strings.TrimSpace(string(output)))
+	}
+	return false, err
+}
+
+func remoteTrackingRef(remoteName, remoteBranch string) string {
+	return "refs/remotes/" + strings.TrimSpace(remoteName) + "/" + strings.TrimSpace(remoteBranch)
+}
+
+func gitCredentialHelperArgs() []string {
+	return []string{
+		"-c", "credential.helper=",
+		"-c", "credential.helper=!f() { echo username=x-access-token; echo password=$NEUDRIVE_GITHUB_TOKEN; }; f",
+	}
+}
+
+func isMissingRemoteBranchError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "couldn't find remote ref") ||
+		strings.Contains(message, "could not find remote ref") ||
+		strings.Contains(message, "remote ref does not exist")
+}
+
+func isBadRevisionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "needed a single revision") ||
+		strings.Contains(message, "unknown revision") ||
+		strings.Contains(message, "ambiguous argument")
+}
+
+func isNonFastForwardPushError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "non-fast-forward") ||
+		strings.Contains(message, "fetch first") ||
+		strings.Contains(message, "stale info") ||
+		strings.Contains(message, "failed to push some refs")
 }
 
 func runGitCommand(ctx context.Context, rootPath string, extraEnv map[string]string, args ...string) (string, error) {

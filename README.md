@@ -22,14 +22,16 @@ neu browse
 
 Your identity, preferences, secrets, and skills follow the person, not the platform.
 
-Why people use it:
+## Features
 
-- Writing preferences captured in Claude can help GPT later the same day.
-- Secrets live in one vault and stay available only to authorized agents.
-- Agents can message each other, collaborate, and hand work off without making you the relay.
-- One Hub ID can travel across AI platforms.
-
-Under the hood, neuDrive exposes a canonical virtual tree together with typed APIs, file-tree access, and `snapshot/changes` sync interfaces.
+- **One personal AI hub**: Keep profile data, preferences, memory, projects, skills, and agent communication in one place, so context can follow you across tools.
+- **Cross-platform AI connections**: Connect Claude, ChatGPT, Cursor, Windsurf, Codex CLI, Gemini CLI, Feishu, and custom MCP clients through hosted OAuth, Remote MCP, local adapters, or the browser extension.
+- **Memory and skill portability**: Import skills, project context, profile/preferences, and notes from agent tools, then export or restore them through the CLI, API, and Bundle Sync.
+- **Secrets and trust controls**: Store secrets in one vault, issue scoped tokens, and control what each agent can access by trust level.
+- **Agent collaboration**: Let agents exchange messages, append project logs, and hand off work without making you copy context between tools.
+- **Developer-friendly data surfaces**: Use a canonical virtual tree, typed HTTP APIs, MCP tools, file-tree read/write, and `snapshot/changes` sync interfaces.
+- **GitHub Backup**: Mirror the visible neuDrive file tree into a private GitHub repository with recoverable version history. [Open guide](docs/github-backup.md)
+- **Hosted or self-hosted**: Use the ready hosted service at [neudrive.ai](https://www.neudrive.ai), or deploy your own hub with local or remote storage.
 
 Hosted service examples in this repo use:
 
@@ -115,6 +117,7 @@ Start here:
 
 - [Browser Extension Guide](docs/browser-extension.md)
 - [Setup Guide](docs/setup.md)
+- [GitHub Backup Guide](docs/github-backup.md)
 - [CLI Guide](docs/cli.md)
 - [Reference](docs/reference.md)
 
@@ -123,6 +126,7 @@ Chinese docs:
 - [Chinese README](README.zh-CN.md)
 - [Chinese Browser Extension Guide](docs/browser-extension.zh-CN.md)
 - [Chinese Setup Guide](docs/setup.zh-CN.md)
+- [Chinese GitHub Backup Guide](docs/github-backup.zh-CN.md)
 - [Chinese CLI Guide](docs/cli.zh-CN.md)
 - [Chinese Reference](docs/reference.zh-CN.md)
 

@@ -20,14 +20,16 @@ neuDrive 给每个人一个 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、
 
 **你的身份、偏好、秘密、技能跟着人走，不跟平台走。**
 
-为什么会用它：
+## 功能特性
 
-- 上午在 Claude 写的文章风格偏好，下午切到 GPT 自动生效
-- 存在保险柜里的 API Key，被授权的 Agent 可以安全调用
-- 你的 Agent 之间可以发邮件、协作、交接任务——你不需要当传话筒
-- 一个 Hub ID，通行所有 AI 平台
-
-底层统一为一棵 canonical virtual tree，对外同时提供 typed API、文件树读写和 `snapshot/changes` 同步接口。
+- **一个人的 AI Hub**：集中保存 profile、偏好、memory、projects、skills 和 Agent 通信记录，让上下文跟着你跨工具流动。
+- **跨平台 AI 接入**：通过 hosted OAuth、Remote MCP、本地 adapter 或浏览器插件连接 Claude、ChatGPT、Cursor、Windsurf、Codex CLI、Gemini CLI、飞书和自定义 MCP 客户端。
+- **记忆和技能迁移**：从 Agent 工具导入 skills、项目上下文、profile/preferences 和 notes，也可以通过 CLI、API、Bundle Sync 导出或恢复。
+- **秘密和信任控制**：secrets 放在统一 vault 中，通过 scoped token 和 trust level 控制每个 Agent 能访问什么。
+- **Agent 协作**：Agent 可以互发消息、写入项目日志、交接任务，不需要你在工具之间手动复制上下文。
+- **面向开发者的数据接口**：提供 canonical virtual tree、typed HTTP API、MCP tools、文件树读写和 `snapshot/changes` 同步接口。
+- **GitHub Backup**：把 neuDrive 可见文件树同步到私有 GitHub 仓库，保留可恢复版本历史。[查看文档](docs/github-backup.zh-CN.md)
+- **Hosted 或自托管**：可以直接使用 [neudrive.ai](https://www.neudrive.ai)，也可以部署自己的 Hub，使用本地或远端存储。
 
 本仓库里的 hosted service 示例统一使用：
 
@@ -113,6 +115,7 @@ neu login
 
 - [浏览器插件指南](docs/browser-extension.zh-CN.md)
 - [接入说明](docs/setup.zh-CN.md)
+- [GitHub Backup 指南](docs/github-backup.zh-CN.md)
 - [CLI 使用手册](docs/cli.zh-CN.md)
 - [详细参考](docs/reference.zh-CN.md)
 
@@ -121,6 +124,7 @@ neu login
 - [README](README.md)
 - [Browser Extension Guide](docs/browser-extension.md)
 - [Setup Guide](docs/setup.md)
+- [GitHub Backup Guide](docs/github-backup.md)
 - [CLI Guide](docs/cli.md)
 - [Reference](docs/reference.md)
 
